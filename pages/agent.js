@@ -6,15 +6,13 @@ function AgentPortal() {
 
   const [activeTab, setActiveTab] = useState('booking');
 
-  // Core App State
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [billNumber, setBillNumber] = useState('');
 
-  // Phase 1 Booking States
   const [shops, setShops] = useState([]);
   const [selectedShop, setSelectedShop] = useState('');
-  const [selectedShopData, setSelectedShopData] = useState(null); // full shop object
+  const [selectedShopData, setSelectedShopData] = useState(null);
   const [isNewShop, setIsNewShop] = useState(false);
   const [newShopName, setNewShopName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
@@ -24,11 +22,9 @@ function AgentPortal() {
   const [orderItems, setOrderItems] = useState([{ productId: '', quantity: 1 }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // GPS capture for existing shop
   const [shopGpsStatus, setShopGpsStatus] = useState('');
   const [isCapturingShopGps, setIsCapturingShopGps] = useState(false);
 
-  // Phase 2 States
   const [searchBillNumber, setSearchBillNumber] = useState('');
   const [matchedOrder, setMatchedOrder] = useState(null);
   const [amountReceived, setAmountReceived] = useState('');
@@ -44,11 +40,8 @@ function AgentPortal() {
   async function loadInitialData() {
     const { data: empData } = await supabase.from('employees').select('name');
     if (empData) setEmployees(empData);
-
-    // Load shops WITH latitude/longitude so we can detect missing GPS
     const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude');
     if (shopData) setShops(shopData);
-
     const { data: prodData } = await supabase.from('products').select('id, name, unit_price');
     if (prodData) setProductCatalog(prodData);
   }
@@ -61,7 +54,6 @@ function AgentPortal() {
     }
   }, [profile]);
 
-  // When shop selection changes, update selectedShopData
   const handleShopSelect = (shopId) => {
     setSelectedShop(shopId);
     setShopGpsStatus('');
@@ -70,47 +62,34 @@ function AgentPortal() {
     setSelectedShopData(found || null);
   };
 
-  // Capture GPS for an existing shop that has no location
   const captureShopGpsLocation = () => {
     if (!selectedShopData) return;
     setShopGpsStatus('Locating...');
     setIsCapturingShopGps(true);
-
     if (!navigator.geolocation) {
       setShopGpsStatus('GPS not supported on this device.');
       setIsCapturingShopGps(false);
       return;
     }
-
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
-
-        const { error } = await supabase
-          .from('shops')
-          .update({ latitude: lat, longitude: lng })
-          .eq('id', selectedShopData.id);
-
+        const { error } = await supabase.from('shops').update({ latitude: lat, longitude: lng }).eq('id', selectedShopData.id);
         if (error) {
           setShopGpsStatus('❌ Failed to save location.');
         } else {
           setShopGpsStatus(`✅ Location saved! (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
-          // Update local shops list so button disappears
           setShops(shops.map(s => s.id === selectedShopData.id ? { ...s, latitude: lat, longitude: lng } : s));
           setSelectedShopData({ ...selectedShopData, latitude: lat, longitude: lng });
         }
         setIsCapturingShopGps(false);
       },
-      () => {
-        setShopGpsStatus('❌ Could not get location. Please allow GPS access.');
-        setIsCapturingShopGps(false);
-      },
+      () => { setShopGpsStatus('❌ Could not get location. Please allow GPS access.'); setIsCapturingShopGps(false); },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
-  // GPS for new shop
   const captureGpsLocation = () => {
     setGpsStatus('Locating Satellites...');
     if (!navigator.geolocation) { setGpsStatus('GPS Not Supported'); return; }
@@ -143,9 +122,15 @@ function AgentPortal() {
       .eq('bill_number', searchBillNumber.trim())
       .single();
 
-    if (error || !data) { alert('Invoice not found or not yet approved.'); setMatchedOrder(null); return; }
+    if (error || !data) {
+      alert('Invoice not found or not yet approved.');
+      setMatchedOrder(null);
+      return;
+    }
     if (data.status === 'delivered' && parseFloat(data.pending_amount) <= 0) {
-      alert('This bill is fully settled.'); setMatchedOrder(null); return;
+      alert('This bill is fully settled.');
+      setMatchedOrder(null);
+      return;
     }
     setMatchedOrder(data);
     setAmountReceived('');
@@ -154,25 +139,46 @@ function AgentPortal() {
   const handleConfirmDelivery = async (e) => {
     e.preventDefault();
     if (!matchedOrder) return;
+
     const newCashInput = parseFloat(amountReceived) || 0;
     if (newCashInput <= 0) return alert('Please enter a valid amount greater than ₹0.');
-    if (newCashInput > matchedOrder.pending_amount) return alert(`Max allowed: ₹${matchedOrder.pending_amount}`);
+    if (newCashInput > parseFloat(matchedOrder.pending_amount)) {
+      return alert(`Max allowed: ₹${matchedOrder.pending_amount}`);
+    }
 
     setIsProcessingDelivery(true);
     try {
       const updatedAmountReceived = parseFloat(matchedOrder.amount_received || 0) + newCashInput;
       const finalRemainingPending = parseFloat(matchedOrder.bill_amount) - updatedAmountReceived;
-      const { error } = await supabase.from('transactions').update({
-        status: 'delivered', amount_received: updatedAmountReceived,
-        pending_amount: finalRemainingPending, payment_mode: paymentMode,
-        delivered_at: new Date().toISOString()
-      }).eq('id', matchedOrder.id);
-      if (error) throw error;
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .update({
+          status: 'delivered',
+          amount_received: updatedAmountReceived,
+          pending_amount: finalRemainingPending,
+          payment_mode: paymentMode,
+          delivered_at: new Date().toISOString()
+        })
+        .eq('id', matchedOrder.id)
+        .select();
+
+      if (error) {
+        console.error('Supabase update error:', JSON.stringify(error));
+        alert('Update failed: ' + error.message + ' | Code: ' + error.code);
+        return;
+      }
+
       alert(`✅ Payment logged! Collected ₹${newCashInput}. Remaining: ₹${finalRemainingPending}`);
-      setSearchBillNumber(''); setMatchedOrder(null); setAmountReceived('');
+      setSearchBillNumber('');
+      setMatchedOrder(null);
+      setAmountReceived('');
     } catch (err) {
-      alert('Failed to update collection.');
-    } finally { setIsProcessingDelivery(false); }
+      console.error('Exception:', err);
+      alert('Failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsProcessingDelivery(false);
+    }
   };
 
   const handleSubmitOrder = async (e) => {
@@ -225,7 +231,6 @@ function AgentPortal() {
     } finally { setIsSubmitting(false); }
   };
 
-  // Does the selected existing shop have no GPS?
   const selectedShopMissingGps = selectedShopData && !selectedShopData.latitude && !selectedShopData.longitude;
 
   return (
@@ -250,7 +255,6 @@ function AgentPortal() {
         {activeTab === 'booking' ? (
           <form onSubmit={handleSubmitOrder}>
 
-            {/* Employee Name */}
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Select Your Name</label>
               <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} disabled={profile?.role === 'agent'}
@@ -260,13 +264,11 @@ function AgentPortal() {
               </select>
             </div>
 
-            {/* Bill Number */}
             <div style={{ backgroundColor: '#f8fafc', padding: '15px', borderRadius: '8px', marginBottom: '25px', border: '1px dashed #cbd5e1' }}>
               <span style={{ fontSize: '13px', color: '#64748b', display: 'block', marginBottom: '4px' }}>Auto-Generated Bill Tag</span>
               <strong style={{ fontSize: '18px', color: '#0f172a' }}>{billNumber}</strong>
             </div>
 
-            {/* Shop Selection */}
             <div style={{ marginBottom: '25px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontWeight: 'bold' }}>Select Retailer Shop</label>
@@ -288,18 +290,13 @@ function AgentPortal() {
                     ))}
                   </select>
 
-                  {/* GPS capture button — only shown when shop has no GPS */}
                   {selectedShopMissingGps && (
                     <div style={{ marginTop: '12px', padding: '14px', backgroundColor: '#fffbeb', border: '1.5px solid #fbbf24', borderRadius: '8px' }}>
                       <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#92400e', fontWeight: '500' }}>
                         ⚠️ This shop has no GPS location saved. Since you are here now, please capture it!
                       </p>
-                      <button
-                        type="button"
-                        onClick={captureShopGpsLocation}
-                        disabled={isCapturingShopGps}
-                        style={{ width: '100%', padding: '12px', backgroundColor: isCapturingShopGps ? '#94a3b8' : '#f59e0b', color: '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isCapturingShopGps ? 'not-allowed' : 'pointer', fontSize: '14px' }}
-                      >
+                      <button type="button" onClick={captureShopGpsLocation} disabled={isCapturingShopGps}
+                        style={{ width: '100%', padding: '12px', backgroundColor: isCapturingShopGps ? '#94a3b8' : '#f59e0b', color: '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: isCapturingShopGps ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
                         {isCapturingShopGps ? '📡 Getting Location...' : '📍 Capture Shop Location Now'}
                       </button>
                       {shopGpsStatus && (
@@ -310,7 +307,6 @@ function AgentPortal() {
                     </div>
                   )}
 
-                  {/* Confirmation when GPS already exists */}
                   {selectedShopData && selectedShopData.latitude && (
                     <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#16a34a' }}>
                       ✅ GPS on file: {parseFloat(selectedShopData.latitude).toFixed(4)}, {parseFloat(selectedShopData.longitude).toFixed(4)}
@@ -331,7 +327,6 @@ function AgentPortal() {
               )}
             </div>
 
-            {/* Order Items */}
             <div style={{ marginBottom: '30px' }}>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '12px' }}>Book Order Items</label>
               {orderItems.map((item, index) => (
