@@ -43,8 +43,15 @@ function OwnerDashboard() {
   const [financials, setFinancials] = useState({
     totalSales: 0, totalCollected: 0, totalOutstanding: 0,
     cashCollected: 0, upiCollected: 0, chequeCollected: 0,
-    agentRankings: {}, defaulterList: []
+    agentRankings: {}, defaulterList: [], dailyTrend: [],
+    shopPendingBills: [], topShops: [],
+    aging07: 0, aging815: 0, aging1630: 0, aging30plus: 0
   });
+  const [dateRange, setDateRange] = useState('month');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [chartType, setChartType] = useState('bar');
+  const [selectedShopFilter, setSelectedShopFilter] = useState('all');
 
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedAgentForOrder, setSelectedAgentForOrder] = useState('');
@@ -84,37 +91,109 @@ function OwnerDashboard() {
     setIsLoading(false);
   }
 
-  async function calculateFinancialMetrics() {
+  async function calculateFinancialMetrics(range) {
     setIsLoading(true);
-    const { data } = await supabase.from('transactions')
-      .select('bill_amount, amount_received, pending_amount, payment_mode, employee_name, created_at, shops(name)')
+    const activeRange = range || dateRange;
+
+    // Build date filter
+    let fromDate = null;
+    const now = new Date();
+    if (activeRange === 'today') {
+      fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    } else if (activeRange === 'week') {
+      const d = new Date(now); d.setDate(d.getDate() - 7);
+      fromDate = d.toISOString();
+    } else if (activeRange === 'month') {
+      const d = new Date(now); d.setDate(d.getDate() - 30);
+      fromDate = d.toISOString();
+    } else if (activeRange === 'custom' && customFrom) {
+      fromDate = new Date(customFrom).toISOString();
+    }
+
+    let query = supabase.from('transactions')
+      .select('id, bill_number, bill_amount, amount_received, pending_amount, payment_mode, employee_name, created_at, shops(id, name)')
       .in('status', ['approved', 'delivered']);
+    if (fromDate) query = query.gte('created_at', fromDate);
+    if (activeRange === 'custom' && customTo) query = query.lte('created_at', new Date(customTo + 'T23:59:59').toISOString());
+
+    const { data } = await query;
     if (data) {
       let salesSum = 0, collectedSum = 0, creditSum = 0, cashSum = 0, upiSum = 0, chequeSum = 0;
-      let agents = {}, shopsDebt = {};
+      let agents = {}, shopsDebt = {}, shopSales = {}, dailyMap = {}, shopPendingBills = [];
+      const today = new Date();
+
       data.forEach(tx => {
         const amtValue = parseFloat(tx.bill_amount || 0);
         const recValue = parseFloat(tx.amount_received || 0);
         const pendValue = parseFloat(tx.pending_amount || 0);
         salesSum += amtValue; collectedSum += recValue; creditSum += pendValue;
+
         const mode = (tx.payment_mode || 'Cash').toLowerCase();
         if (mode.includes('cash')) cashSum += recValue;
         else if (mode.includes('upi') || mode.includes('gpay') || mode.includes('phonepe')) upiSum += recValue;
         else if (mode.includes('cheque')) chequeSum += recValue;
+
+        // Agent stats
         if (tx.employee_name) {
-          if (!agents[tx.employee_name]) agents[tx.employee_name] = { sales: 0, collected: 0 };
+          if (!agents[tx.employee_name]) agents[tx.employee_name] = { sales: 0, collected: 0, count: 0 };
           agents[tx.employee_name].sales += amtValue;
           agents[tx.employee_name].collected += recValue;
+          agents[tx.employee_name].count += 1;
         }
-        if (pendValue > 0 && tx.shops?.name) {
-          if (!shopsDebt[tx.shops.name]) shopsDebt[tx.shops.name] = 0;
-          shopsDebt[tx.shops.name] += pendValue;
+
+        // Shop sales for top shops
+        const shopName = tx.shops?.name || 'Unknown';
+        if (!shopSales[shopName]) shopSales[shopName] = 0;
+        shopSales[shopName] += amtValue;
+
+        // Daily trend
+        const dayKey = new Date(tx.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+        if (!dailyMap[dayKey]) dailyMap[dayKey] = { label: dayKey, sales: 0, date: new Date(tx.created_at) };
+        dailyMap[dayKey].sales += amtValue;
+
+        // Shop pending bills
+        if (pendValue > 0) {
+          shopPendingBills.push({
+            billNumber: tx.bill_number,
+            shopName: shopName,
+            date: new Date(tx.created_at).toLocaleDateString('en-IN'),
+            total: amtValue,
+            pending: pendValue,
+            createdAt: new Date(tx.created_at)
+          });
         }
       });
+
+      // Credit aging
+      let aging07 = 0, aging815 = 0, aging1630 = 0, aging30plus = 0;
+      shopPendingBills.forEach(bill => {
+        const days = Math.floor((today - bill.createdAt) / (1000 * 60 * 60 * 24));
+        if (days <= 7) aging07 += bill.pending;
+        else if (days <= 15) aging815 += bill.pending;
+        else if (days <= 30) aging1630 += bill.pending;
+        else aging30plus += bill.pending;
+      });
+
+      // Top shops
+      const topShops = Object.entries(shopSales)
+        .map(([name, sales]) => ({ name, sales }))
+        .sort((a, b) => b.sales - a.sales).slice(0, 8);
+
+      // Daily trend sorted
+      const dailyTrend = Object.values(dailyMap)
+        .sort((a, b) => a.date - b.date);
+
       const sortedDefaulters = Object.entries(shopsDebt)
         .map(([name, balance]) => ({ name, balance }))
         .sort((a, b) => b.balance - a.balance).slice(0, 5);
-      setFinancials({ totalSales: salesSum, totalCollected: collectedSum, totalOutstanding: creditSum, cashCollected: cashSum, upiCollected: upiSum, chequeCollected: chequeSum, agentRankings: agents, defaulterList: sortedDefaulters });
+
+      setFinancials({
+        totalSales: salesSum, totalCollected: collectedSum, totalOutstanding: creditSum,
+        cashCollected: cashSum, upiCollected: upiSum, chequeCollected: chequeSum,
+        agentRankings: agents, defaulterList: sortedDefaulters,
+        dailyTrend, shopPendingBills, topShops,
+        aging07, aging815, aging1630, aging30plus
+      });
     }
     setIsLoading(false);
   }
@@ -230,7 +309,7 @@ function OwnerDashboard() {
     setSelectedAgentForOrder('');
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); }
     else if (activeTab === 'history') loadHistoryLedger();
-    else if (activeTab === 'finance') calculateFinancialMetrics();
+    else if (activeTab === 'finance') calculateFinancialMetrics(dateRange);
     else if (activeTab === 'map') loadRouteMapLocations();
     else if (activeTab === 'shops') loadShops();
     else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); }
@@ -486,46 +565,264 @@ function OwnerDashboard() {
               </div>
 
             ) : activeTab === 'finance' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                <div style={{ display: 'flex', gap: '20px' }}>
-                  <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: 1 }}><span style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>TOTAL SALES</span><strong style={{ fontSize: '24px', display: 'block', marginTop: '5px' }}>₹{financials.totalSales.toLocaleString('en-IN')}</strong></div>
-                  <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: 1 }}><span style={{ fontSize: '12px', fontWeight: 'bold', color: '#16a34a' }}>COLLECTED</span><strong style={{ fontSize: '24px', display: 'block', color: '#16a34a', marginTop: '5px' }}>₹{financials.totalCollected.toLocaleString('en-IN')}</strong></div>
-                  <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: 1 }}><span style={{ fontSize: '12px', fontWeight: 'bold', color: '#dc2626' }}>OUTSTANDING</span><strong style={{ fontSize: '24px', display: 'block', color: '#dc2626', marginTop: '5px' }}>₹{financials.totalOutstanding.toLocaleString('en-IN')}</strong></div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+                {/* ── DATE FILTER ── */}
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {['today', 'week', 'month', 'custom'].map(range => (
+                    <button key={range} onClick={() => {
+                      setDateRange(range);
+                      if (range !== 'custom') calculateFinancialMetrics(range);
+                    }}
+                      style={{ padding: '8px 18px', borderRadius: '6px', border: '1px solid #e2e8f0', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', backgroundColor: dateRange === range ? '#0f172a' : '#ffffff', color: dateRange === range ? '#ffffff' : '#475569' }}>
+                      {range === 'today' ? 'Today' : range === 'week' ? 'This Week' : range === 'month' ? 'This Month' : 'Custom'}
+                    </button>
+                  ))}
+                  {dateRange === 'custom' && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                        style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px' }} />
+                      <span style={{ color: '#64748b' }}>to</span>
+                      <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                        style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px' }} />
+                      <button onClick={() => calculateFinancialMetrics('custom')}
+                        style={{ padding: '7px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>Apply</button>
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: 'flex', gap: '30px' }}>
-                  <div style={{ flex: 1, backgroundColor: '#ffffff', padding: '25px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: '16px' }}>Collection Breakdown</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span>💵 Cash</span><strong style={{ color: '#16a34a' }}>₹{financials.cashCollected.toLocaleString('en-IN')}</strong></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span>📱 UPI</span><strong style={{ color: '#2563eb' }}>₹{financials.upiCollected.toLocaleString('en-IN')}</strong></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>🏢 Cheque</span><strong>₹{financials.chequeCollected.toLocaleString('en-IN')}</strong></div>
+
+                {/* ── SUMMARY CARDS ── */}
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: 1, minWidth: '160px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase' }}>Total Sales</span>
+                    <strong style={{ fontSize: '22px', display: 'block', marginTop: '6px' }}>₹{financials.totalSales.toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: 1, minWidth: '160px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#16a34a', textTransform: 'uppercase' }}>Collected</span>
+                    <strong style={{ fontSize: '22px', display: 'block', color: '#16a34a', marginTop: '6px' }}>₹{financials.totalCollected.toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', flex: 1, minWidth: '160px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#dc2626', textTransform: 'uppercase' }}>Outstanding</span>
+                    <strong style={{ fontSize: '22px', display: 'block', color: '#dc2626', marginTop: '6px' }}>₹{financials.totalOutstanding.toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div style={{ backgroundColor: '#0f172a', padding: '20px', borderRadius: '8px', flex: 1, minWidth: '160px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' }}>Collection Efficiency</span>
+                    <strong style={{ fontSize: '28px', display: 'block', color: financials.totalSales > 0 ? '#4ade80' : '#64748b', marginTop: '6px' }}>
+                      {financials.totalSales > 0 ? Math.round((financials.totalCollected / financials.totalSales) * 100) : 0}%
+                    </strong>
+                  </div>
+                </div>
+
+                {/* ── COLLECTION BREAKDOWN ── */}
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 'bold' }}>Collection Breakdown</h3>
+                  <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                    {[
+                      { label: '💵 Cash', value: financials.cashCollected, color: '#16a34a' },
+                      { label: '📱 UPI', value: financials.upiCollected, color: '#2563eb' },
+                      { label: '🏢 Cheque', value: financials.chequeCollected, color: '#7c3aed' }
+                    ].map(item => (
+                      <div key={item.label} style={{ flex: 1, minWidth: '120px', padding: '14px', backgroundColor: '#f8fafc', borderRadius: '8px', borderLeft: `4px solid ${item.color}` }}>
+                        <span style={{ fontSize: '13px', color: '#64748b' }}>{item.label}</span>
+                        <strong style={{ display: 'block', fontSize: '18px', color: item.color, marginTop: '4px' }}>₹{item.value.toLocaleString('en-IN')}</strong>
+                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                          {financials.totalCollected > 0 ? Math.round((item.value / financials.totalCollected) * 100) : 0}% of total
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── DAILY SALES TREND ── */}
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h3 style={{ margin: '0', fontSize: '15px', fontWeight: 'bold' }}>Daily Sales Trend</h3>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => setChartType('bar')}
+                        style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', backgroundColor: chartType === 'bar' ? '#0f172a' : '#ffffff', color: chartType === 'bar' ? '#ffffff' : '#475569' }}>
+                        📊 Bar (7 days)
+                      </button>
+                      <button onClick={() => setChartType('line')}
+                        style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', backgroundColor: chartType === 'line' ? '#0f172a' : '#ffffff', color: chartType === 'line' ? '#ffffff' : '#475569' }}>
+                        📈 Line (30 days)
+                      </button>
                     </div>
                   </div>
-                  <div style={{ flex: 1, backgroundColor: '#ffffff', padding: '25px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <h3 style={{ margin: '0 0 15px 0', fontSize: '16px', color: '#991b1b' }}>⚠️ Top Outstanding</h3>
-                    {financials.defaulterList.length === 0 ? <p style={{ color: '#64748b', fontSize: '14px' }}>All settled.</p> :
-                      financials.defaulterList.map((shop, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px' }}>
-                          <span>{shop.name}</span><span style={{ fontWeight: 'bold', color: '#dc2626' }}>₹{shop.balance.toLocaleString('en-IN')}</span>
+                  {financials.dailyTrend && financials.dailyTrend.length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      {chartType === 'bar' ? (
+                        /* Bar Chart */
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', height: '160px', padding: '0 4px' }}>
+                          {financials.dailyTrend.slice(-7).map((day, i) => {
+                            const maxVal = Math.max(...financials.dailyTrend.slice(-7).map(d => d.sales));
+                            const height = maxVal > 0 ? Math.max(8, (day.sales / maxVal) * 140) : 8;
+                            return (
+                              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>₹{day.sales > 999 ? (day.sales/1000).toFixed(1)+'k' : day.sales}</span>
+                                <div style={{ width: '100%', height: `${height}px`, backgroundColor: '#2563eb', borderRadius: '4px 4px 0 0', transition: 'height 0.3s' }}></div>
+                                <span style={{ fontSize: '9px', color: '#64748b' }}>{day.label}</span>
+                              </div>
+                            );
+                          })}
                         </div>
+                      ) : (
+                        /* Line Chart */
+                        <svg width="100%" height="160" viewBox={`0 0 ${Math.max(600, financials.dailyTrend.length * 20)} 160`} preserveAspectRatio="none">
+                          {(() => {
+                            const data = financials.dailyTrend;
+                            const maxVal = Math.max(...data.map(d => d.sales), 1);
+                            const w = Math.max(600, data.length * 20);
+                            const points = data.map((d, i) => `${(i / (data.length - 1)) * w},${140 - (d.sales / maxVal) * 130}`).join(' ');
+                            const areaPoints = `0,140 ${points} ${w},140`;
+                            return (
+                              <>
+                                <defs>
+                                  <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#2563eb" stopOpacity="0.3"/>
+                                    <stop offset="100%" stopColor="#2563eb" stopOpacity="0"/>
+                                  </linearGradient>
+                                </defs>
+                                <polygon points={areaPoints} fill="url(#lineGrad)"/>
+                                <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="2"/>
+                                {data.map((d, i) => (
+                                  <circle key={i} cx={(i / (data.length - 1)) * w} cy={140 - (d.sales / maxVal) * 130} r="3" fill="#2563eb"/>
+                                ))}
+                              </>
+                            );
+                          })()}
+                        </svg>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No sales data for this period.</p>
+                  )}
+                </div>
+
+                {/* ── SHOP PENDING BILLS ── */}
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                    <h3 style={{ margin: '0', fontSize: '15px', fontWeight: 'bold' }}>Shop Pending Bills</h3>
+                    <select value={selectedShopFilter} onChange={e => setSelectedShopFilter(e.target.value)}
+                      style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', backgroundColor: '#ffffff', minWidth: '200px' }}>
+                      <option value="all">All Shops</option>
+                      {financials.shopPendingBills && [...new Set(financials.shopPendingBills.map(b => b.shopName))].map(name => (
+                        <option key={name} value={name}>{name}</option>
                       ))}
+                    </select>
+                  </div>
+                  {financials.shopPendingBills && financials.shopPendingBills.length > 0 ? (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Bill Number</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Shop</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Date</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Total Bill</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Pending</th>
+                      </tr></thead>
+                      <tbody>
+                        {financials.shopPendingBills
+                          .filter(b => selectedShopFilter === 'all' || b.shopName === selectedShopFilter)
+                          .map((bill, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{bill.billNumber}</td>
+                              <td style={{ padding: '10px 12px' }}>{bill.shopName}</td>
+                              <td style={{ padding: '10px 12px', color: '#64748b' }}>{bill.date}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{parseFloat(bill.total).toLocaleString('en-IN')}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: '#dc2626' }}>₹{parseFloat(bill.pending).toLocaleString('en-IN')}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+                          <td colSpan={3} style={{ padding: '10px 12px', fontWeight: 'bold', fontSize: '13px' }}>
+                            {selectedShopFilter === 'all' ? 'All Shops Total' : selectedShopFilter}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold' }}>
+                            ₹{financials.shopPendingBills.filter(b => selectedShopFilter === 'all' || b.shopName === selectedShopFilter).reduce((s, b) => s + parseFloat(b.total), 0).toLocaleString('en-IN')}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: '#dc2626' }}>
+                            ₹{financials.shopPendingBills.filter(b => selectedShopFilter === 'all' || b.shopName === selectedShopFilter).reduce((s, b) => s + parseFloat(b.pending), 0).toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  ) : (
+                    <p style={{ color: '#16a34a', fontSize: '13px', textAlign: 'center', padding: '20px' }}>✅ No pending bills!</p>
+                  )}
+                </div>
+
+                {/* ── CREDIT AGING ── */}
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 'bold' }}>Credit Aging</h3>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    {[
+                      { label: '0-7 days', key: 'aging07', color: '#16a34a' },
+                      { label: '8-15 days', key: 'aging815', color: '#f59e0b' },
+                      { label: '16-30 days', key: 'aging1630', color: '#f97316' },
+                      { label: '30+ days', key: 'aging30plus', color: '#dc2626' }
+                    ].map(item => (
+                      <div key={item.key} style={{ flex: 1, minWidth: '120px', padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', borderTop: `4px solid ${item.color}`, textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>{item.label}</p>
+                        <strong style={{ fontSize: '18px', color: item.color }}>₹{(financials[item.key] || 0).toLocaleString('en-IN')}</strong>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <h3 style={{ margin: '0 0 15px 0', fontSize: '16px' }}>👥 Agent Performance</h3>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                    <thead><tr style={{ textAlign: 'left', backgroundColor: '#f1f5f9' }}>
-                      <th style={{ padding: '12px' }}>Agent</th><th style={{ padding: '12px' }}>Sales</th><th style={{ padding: '12px' }}>Collected</th>
+
+                {/* ── TOP PERFORMING SHOPS ── */}
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 'bold' }}>🏆 Top Performing Shops</h3>
+                  {financials.topShops && financials.topShops.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {financials.topShops.map((shop, i) => {
+                        const maxSales = financials.topShops[0].sales;
+                        const pct = maxSales > 0 ? (shop.sales / maxSales) * 100 : 0;
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ width: '22px', height: '22px', borderRadius: '50%', backgroundColor: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : '#b45309', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{i + 1}</span>
+                            <span style={{ width: '140px', fontSize: '13px', fontWeight: '500', flexShrink: 0 }}>{shop.name}</span>
+                            <div style={{ flex: 1, backgroundColor: '#f1f5f9', borderRadius: '4px', height: '8px' }}>
+                              <div style={{ width: `${pct}%`, backgroundColor: '#2563eb', borderRadius: '4px', height: '8px' }}></div>
+                            </div>
+                            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', width: '90px', textAlign: 'right' }}>₹{shop.sales.toLocaleString('en-IN')}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{ color: '#64748b', fontSize: '13px' }}>No data available.</p>
+                  )}
+                </div>
+
+                {/* ── AGENT DETAILED REPORT ── */}
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 'bold' }}>👥 Agent Detailed Report</h3>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                      <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Bills</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Total Sales</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Collected</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Avg Bill</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Collection %</th>
                     </tr></thead>
-                    <tbody>{Object.entries(financials.agentRankings).map(([name, data], i) => (
+                    <tbody>{Object.entries(financials.agentRankings || {}).map(([name, data], i) => (
                       <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px', fontWeight: 'bold' }}>{name}</td>
-                        <td style={{ padding: '12px', color: '#2563eb' }}>₹{data.sales.toLocaleString('en-IN')}</td>
-                        <td style={{ padding: '12px', color: '#16a34a' }}>₹{data.collected.toLocaleString('en-IN')}</td>
+                        <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{name}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>{data.count || 0}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#2563eb' }}>₹{data.sales.toLocaleString('en-IN')}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a' }}>₹{data.collected.toLocaleString('en-IN')}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{data.count > 0 ? Math.round(data.sales / data.count).toLocaleString('en-IN') : 0}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                          <span style={{ backgroundColor: data.sales > 0 && (data.collected / data.sales) >= 0.8 ? '#dcfce7' : '#fef9c3', color: data.sales > 0 && (data.collected / data.sales) >= 0.8 ? '#16a34a' : '#854d0e', padding: '3px 8px', borderRadius: '20px', fontWeight: 'bold' }}>
+                            {data.sales > 0 ? Math.round((data.collected / data.sales) * 100) : 0}%
+                          </span>
+                        </td>
                       </tr>
                     ))}</tbody>
                   </table>
                 </div>
+
               </div>
 
             ) : activeTab === 'map' ? (
