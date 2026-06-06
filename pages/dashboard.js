@@ -807,6 +807,8 @@ function OwnerDashboard() {
             ) : (
               /* Management Panel */
               <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+
+                {/* 1. Invite New Agent */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Invite New Agent</h3>
                   <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Agent receives email invitation to set password and log in.</p>
@@ -823,6 +825,43 @@ function OwnerDashboard() {
                   </div>
                 </div>
 
+                {/* 2. Field Agents List */}
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Field Agents</h3>
+                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Manage active field agents. Removing an agent revokes login access but preserves all their past bills.</p>
+                  {agentsList.length === 0 ? (
+                    <p style={{ color: '#64748b', fontSize: '14px' }}>No agents found.</p>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
+                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Email</th>
+                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Bills Handled</th>
+                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Joined</th>
+                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Action</th>
+                      </tr></thead>
+                      <tbody>{agentsList.map((agent) => (
+                        <tr key={agent.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '14px 16px', fontWeight: 'bold' }}>{agent.full_name}</td>
+                          <td style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{agent.email}</td>
+                          <td style={{ padding: '14px 16px' }}>
+                            <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>{agent.billCount} bills</span>
+                          </td>
+                          <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(agent.created_at).toLocaleDateString('en-IN')}</td>
+                          <td style={{ padding: '14px 16px' }}>
+                            <button
+                              onClick={() => handleDeleteAgent(agent)}
+                              disabled={isDeletingAgent === agent.id}
+                              style={{ padding: '8px 14px', backgroundColor: isDeletingAgent === agent.id ? '#e2e8f0' : '#fee2e2', color: isDeletingAgent === agent.id ? '#94a3b8' : '#dc2626', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                            >{isDeletingAgent === agent.id ? 'Removing...' : '🗑 Remove Agent'}</button>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  )}
+                </div>
+
+                {/* 3. Add New Product */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Add New Product</h3>
                   <form onSubmit={async (e) => {
@@ -852,40 +891,7 @@ function OwnerDashboard() {
                   </form>
                 </div>
 
-
-                {/* ── AGENTS LIST ── */}
-                <div style={{ backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "30px" }}>
-                  <h3 style={{ margin: "0 0 6px 0", fontSize: "18px" }}>Field Agents</h3>
-                  <p style={{ margin: "0 0 20px 0", fontSize: "13px", color: "#64748b" }}>Manage your active field agents. Deleting an agent removes their login access but preserves all their past bills.</p>
-                  {agentsList.length === 0 ? (
-                    <p style={{ color: "#64748b", fontSize: "14px" }}>No agents found.</p>
-                  ) : (
-                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                      <thead><tr style={{ backgroundColor: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
-                        <th style={{ padding: "14px 16px", color: "#475569", fontSize: "13px" }}>Name</th>
-                        <th style={{ padding: "14px 16px", color: "#475569", fontSize: "13px" }}>Email</th>
-                        <th style={{ padding: "14px 16px", color: "#475569", fontSize: "13px" }}>Bills Handled</th>
-                        <th style={{ padding: "14px 16px", color: "#475569", fontSize: "13px" }}>Joined</th>
-                        <th style={{ padding: "14px 16px", color: "#475569", fontSize: "13px" }}>Action</th>
-                      </tr></thead>
-                      <tbody>{agentsList.map((agent) => (
-                        <tr key={agent.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "14px 16px", fontWeight: "bold" }}>{agent.full_name}</td>
-                          <td style={{ padding: "14px 16px", color: "#475569", fontSize: "13px" }}>{agent.email}</td>
-                          <td style={{ padding: "14px 16px" }}><span style={{ backgroundColor: "#f0fdf4", color: "#16a34a", padding: "4px 10px", borderRadius: "20px", fontSize: "13px", fontWeight: "bold" }}>{agent.billCount} bills</span></td>
-                          <td style={{ padding: "14px 16px", fontSize: "13px", color: "#64748b" }}>{new Date(agent.created_at).toLocaleDateString("en-IN")}</td>
-                          <td style={{ padding: "14px 16px" }}>
-                            <button
-                              onClick={() => handleDeleteAgent(agent)}
-                              disabled={isDeletingAgent === agent.id}
-                              style={{ padding: "8px 14px", backgroundColor: isDeletingAgent === agent.id ? "#e2e8f0" : "#fee2e2", color: isDeletingAgent === agent.id ? "#94a3b8" : "#dc2626", border: "none", borderRadius: "6px", fontWeight: "bold", cursor: "pointer", fontSize: "12px" }}
-                            >{isDeletingAgent === agent.id ? "Removing..." : "🗑 Remove Agent"}</button>
-                          </td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  )}
-                </div>
+                {/* 4. Product Catalog */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>Product Catalog</h3>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -928,6 +934,7 @@ function OwnerDashboard() {
               </div>
             )}
           </div>
+
 
           {/* Statement Drawer */}
           {selectedShopLedger && activeTab === 'history' && (
