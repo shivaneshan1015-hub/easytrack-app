@@ -1,6 +1,88 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth, withAuth } from '../hooks/useAuth';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+
+// Custom tooltip for charts
+const ChartTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div style={{ backgroundColor: '#0f172a', padding: '10px 14px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+        <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#94a3b8' }}>{label}</p>
+        <p style={{ margin: '0', fontSize: '14px', fontWeight: 'bold', color: '#4ade80' }}>
+          ₹{parseFloat(payload[0].value).toLocaleString('en-IN')}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
+// Chart component
+function ChartView({ chartType, data }) {
+  const last7 = data.slice(-7);
+  const last30 = data.slice(-30);
+
+  if (chartType === 'bar') {
+    // Fill missing days with 0 for last 7 days
+    const today = new Date();
+    const days7 = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      const found = last7.find(x => x.label === label);
+      days7.push({ label, sales: found ? found.sales : 0 });
+    }
+    return (
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={days7} margin={{ top: 10, right: 10, left: 10, bottom: 5 }} barSize={36}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+            tickFormatter={v => v >= 1000 ? `₹${(v/1000).toFixed(0)}k` : `₹${v}`} />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f8fafc' }} />
+          <Bar dataKey="sales" fill="#2563eb" radius={[6, 6, 0, 0]}
+            label={{ position: 'top', fontSize: 10, fill: '#64748b',
+              formatter: v => v > 0 ? `₹${v >= 1000 ? (v/1000).toFixed(1)+'k' : v}` : '' }} />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  // Line chart — 30 days
+  const today = new Date();
+  const days30 = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    const found = last30.find(x => x.label === label);
+    days30.push({ label, sales: found ? found.sales : 0 });
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <AreaChart data={days30} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+        <defs>
+          <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15}/>
+            <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false}
+          interval={4} />
+        <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+          tickFormatter={v => v >= 1000 ? `₹${(v/1000).toFixed(0)}k` : `₹${v}`} />
+        <Tooltip content={<ChartTooltip />} />
+        <Area type="monotone" dataKey="sales" stroke="#2563eb" strokeWidth={2}
+          fill="url(#salesGrad)" dot={{ r: 3, fill: '#2563eb', strokeWidth: 0 }}
+          activeDot={{ r: 5, fill: '#2563eb' }} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
 
 const InteractiveRouteMap = dynamic(() => import('../components/RouteMap'), {
   ssr: false,
@@ -635,7 +717,7 @@ function OwnerDashboard() {
 
                 {/* ── DAILY SALES TREND ── */}
                 <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                     <h3 style={{ margin: '0', fontSize: '15px', fontWeight: 'bold' }}>Daily Sales Trend</h3>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button onClick={() => setChartType('bar')}
@@ -649,50 +731,7 @@ function OwnerDashboard() {
                     </div>
                   </div>
                   {financials.dailyTrend && financials.dailyTrend.length > 0 ? (
-                    <div style={{ overflowX: 'auto' }}>
-                      {chartType === 'bar' ? (
-                        /* Bar Chart */
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', height: '160px', padding: '0 4px' }}>
-                          {financials.dailyTrend.slice(-7).map((day, i) => {
-                            const maxVal = Math.max(...financials.dailyTrend.slice(-7).map(d => d.sales));
-                            const height = maxVal > 0 ? Math.max(8, (day.sales / maxVal) * 140) : 8;
-                            return (
-                              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 'bold' }}>₹{day.sales > 999 ? (day.sales/1000).toFixed(1)+'k' : day.sales}</span>
-                                <div style={{ width: '100%', height: `${height}px`, backgroundColor: '#2563eb', borderRadius: '4px 4px 0 0', transition: 'height 0.3s' }}></div>
-                                <span style={{ fontSize: '9px', color: '#64748b' }}>{day.label}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        /* Line Chart */
-                        <svg width="100%" height="160" viewBox={`0 0 ${Math.max(600, financials.dailyTrend.length * 20)} 160`} preserveAspectRatio="none">
-                          {(() => {
-                            const data = financials.dailyTrend;
-                            const maxVal = Math.max(...data.map(d => d.sales), 1);
-                            const w = Math.max(600, data.length * 20);
-                            const points = data.map((d, i) => `${(i / (data.length - 1)) * w},${140 - (d.sales / maxVal) * 130}`).join(' ');
-                            const areaPoints = `0,140 ${points} ${w},140`;
-                            return (
-                              <>
-                                <defs>
-                                  <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#2563eb" stopOpacity="0.3"/>
-                                    <stop offset="100%" stopColor="#2563eb" stopOpacity="0"/>
-                                  </linearGradient>
-                                </defs>
-                                <polygon points={areaPoints} fill="url(#lineGrad)"/>
-                                <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="2"/>
-                                {data.map((d, i) => (
-                                  <circle key={i} cx={(i / (data.length - 1)) * w} cy={140 - (d.sales / maxVal) * 130} r="3" fill="#2563eb"/>
-                                ))}
-                              </>
-                            );
-                          })()}
-                        </svg>
-                      )}
-                    </div>
+                    <ChartView chartType={chartType} data={financials.dailyTrend} />
                   ) : (
                     <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No sales data for this period.</p>
                   )}
