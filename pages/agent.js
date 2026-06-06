@@ -86,7 +86,7 @@ function AgentPortal() {
       .select('id, bill_number, bill_amount, amount_received, pending_amount, status')
       .eq('shop_id', shop.id)
       .in('status', ['approved', 'delivered'])
-      .gt('pending_amount', 0)
+      .or('status.eq.approved,and(status.eq.delivered,pending_amount.gt.0)')
       .order('created_at', { ascending: false });
 
     if (!error && data) setPendingBills(data);
