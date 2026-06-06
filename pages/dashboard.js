@@ -110,6 +110,10 @@ function OwnerDashboard() {
   const [inviteMessage, setInviteMessage] = useState('');
   const [agentsList, setAgentsList] = useState([]);
   const [isDeletingAgent, setIsDeletingAgent] = useState(null);
+  const [leaveNotifications, setLeaveNotifications] = useState([]);
+  const [selectedAgentProfile, setSelectedAgentProfile] = useState(null);
+  const [agentProfileData, setAgentProfileData] = useState(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
   const [shopsList, setShopsList] = useState([]);
   const [newShopName, setNewShopName] = useState('');
@@ -394,7 +398,7 @@ function OwnerDashboard() {
     else if (activeTab === 'finance') calculateFinancialMetrics(dateRange);
     else if (activeTab === 'map') loadRouteMapLocations();
     else if (activeTab === 'shops') loadShops();
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -519,6 +523,63 @@ function OwnerDashboard() {
     } catch (err) { alert('Failed.'); } finally { setIsUpdating(false); }
   };
 
+  async function loadLeaveNotifications() {
+    const today = new Date().toISOString().split('T')[0];
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const { data } = await supabase
+      .from('leaves')
+      .select('*')
+      .gte('leave_date', today)
+      .lte('leave_date', nextWeek.toISOString().split('T')[0])
+      .order('leave_date', { ascending: true });
+    if (data) setLeaveNotifications(data);
+  }
+
+  async function loadAgentProfile(agent) {
+    setSelectedAgentProfile(agent);
+    setIsLoadingProfile(true);
+    const now = new Date();
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    // Get bills this month
+    const { data: bills } = await supabase
+      .from('transactions')
+      .select('bill_amount, amount_received, status, created_at')
+      .eq('employee_name', agent.full_name)
+      .gte('created_at', firstOfMonth);
+
+    // Get all leaves
+    const { data: leaves } = await supabase
+      .from('leaves')
+      .select('leave_date, reason')
+      .eq('agent_name', agent.full_name)
+      .order('leave_date', { ascending: false });
+
+    // Calculate working days this month
+    const daysInMonth = now.getDate();
+    const leavesThisMonth = (leaves || []).filter(l => {
+      const d = new Date(l.leave_date);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+    const workingDays = daysInMonth - leavesThisMonth.length;
+
+    // Calculate performance
+    const totalSales = (bills || []).reduce((s, b) => s + parseFloat(b.bill_amount || 0), 0);
+    const totalCollected = (bills || []).reduce((s, b) => s + parseFloat(b.amount_received || 0), 0);
+
+    setAgentProfileData({
+      billsThisMonth: (bills || []).length,
+      totalSales,
+      totalCollected,
+      collectionRate: totalSales > 0 ? Math.round((totalCollected / totalSales) * 100) : 0,
+      workingDays,
+      leavesThisMonth: leavesThisMonth.length,
+      allLeaves: leaves || []
+    });
+    setIsLoadingProfile(false);
+  }
+
   const tabStyle = (tab) => ({
     padding: '12px 16px', backgroundColor: activeTab === tab ? '#1e293b' : 'transparent',
     borderRadius: '6px', color: activeTab === tab ? '#38bdf8' : '#94a3b8',
@@ -531,7 +592,20 @@ function OwnerDashboard() {
       {/* Sidebar */}
       <aside style={{ width: '260px', backgroundColor: '#0f172a', padding: '25px', color: '#ffffff', display: 'flex', flexDirection: 'column' }} className="no-print">
         <h2 style={{ margin: '0 0 5px', fontSize: '22px', fontWeight: 'bold' }}>EasyTrack</h2>
-        <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '35px' }}>HQ Control Room</span>
+        <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '20px' }}>HQ Control Room</span>
+        {leaveNotifications.length > 0 && (
+          <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => setActiveTab('admin')}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span style={{ backgroundColor: '#7c3aed', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{leaveNotifications.length}</span>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c4b5fd' }}>Leave Requests</span>
+            </div>
+            {leaveNotifications.slice(0, 3).map((leave, i) => (
+              <div key={i} style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+                🏖️ {leave.agent_name} — {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+              </div>
+            ))}
+          </div>
+        )}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
           <div onClick={() => setActiveTab('pending')} style={tabStyle('pending')}>⏳ Pending Orders</div>
           <div onClick={() => setActiveTab('history')} style={tabStyle('history')}>📜 Dispatched Ledger</div>
@@ -1161,6 +1235,27 @@ function OwnerDashboard() {
                   </div>
                 </div>
 
+                {/* 2. Upcoming Leaves */}
+                {leaveNotifications.length > 0 && (
+                  <div style={{ backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '8px', padding: '24px' }}>
+                    <h3 style={{ margin: '0 0 6px', fontSize: '18px' }}>🏖️ Upcoming Agent Leaves</h3>
+                    <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b' }}>Agents on leave in the next 7 days. Deliveries have been auto-reassigned.</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {leaveNotifications.map((leave, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e9d5ff' }}>
+                          <div>
+                            <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '14px' }}>{leave.agent_name}</p>
+                            <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{leave.reason}</p>
+                          </div>
+                          <span style={{ backgroundColor: '#ede9fe', color: '#7c3aed', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>
+                            {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* 2. Field Agents List */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Field Agents</h3>
@@ -1178,7 +1273,12 @@ function OwnerDashboard() {
                       </tr></thead>
                       <tbody>{agentsList.map((agent) => (
                         <tr key={agent.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '14px 16px', fontWeight: 'bold' }}>{agent.full_name}</td>
+                          <td style={{ padding: '14px 16px' }}>
+                            <button onClick={() => loadAgentProfile(agent)}
+                              style={{ background: 'none', border: 'none', fontWeight: 'bold', fontSize: '14px', color: '#2563eb', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                              {agent.full_name}
+                            </button>
+                          </td>
                           <td style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{agent.email}</td>
                           <td style={{ padding: '14px 16px' }}>
                             <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>{agent.billCount} bills</span>
@@ -1271,6 +1371,77 @@ function OwnerDashboard() {
             )}
           </div>
 
+
+          {/* ── AGENT PROFILE MODAL ── */}
+          {selectedAgentProfile && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '30px', width: '500px', maxHeight: '80vh', overflowY: 'auto', margin: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <div>
+                    <h2 style={{ margin: '0 0 4px', fontSize: '20px' }}>{selectedAgentProfile.full_name}</h2>
+                    <p style={{ margin: '0', fontSize: '13px', color: '#64748b' }}>{selectedAgentProfile.email}</p>
+                  </div>
+                  <button onClick={() => { setSelectedAgentProfile(null); setAgentProfileData(null); }}
+                    style={{ background: 'none', border: 'none', fontSize: '20px', color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+                </div>
+
+                {isLoadingProfile ? (
+                  <p style={{ textAlign: 'center', color: '#64748b' }}>Loading profile...</p>
+                ) : agentProfileData && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                    {/* This Month Summary */}
+                    <div style={{ backgroundColor: '#f8fafc', borderRadius: '8px', padding: '16px' }}>
+                      <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>This Month</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div style={{ backgroundColor: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                          <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>WORKING DAYS</p>
+                          <strong style={{ fontSize: '24px', color: '#16a34a' }}>{agentProfileData.workingDays}</strong>
+                        </div>
+                        <div style={{ backgroundColor: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                          <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>LEAVES TAKEN</p>
+                          <strong style={{ fontSize: '24px', color: '#f59e0b' }}>{agentProfileData.leavesThisMonth}</strong>
+                        </div>
+                        <div style={{ backgroundColor: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                          <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>BILLS</p>
+                          <strong style={{ fontSize: '24px', color: '#2563eb' }}>{agentProfileData.billsThisMonth}</strong>
+                        </div>
+                        <div style={{ backgroundColor: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                          <p style={{ margin: '0 0 4px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>COLLECTION %</p>
+                          <strong style={{ fontSize: '24px', color: agentProfileData.collectionRate >= 80 ? '#16a34a' : '#f59e0b' }}>{agentProfileData.collectionRate}%</strong>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <span style={{ fontSize: '13px', color: '#475569' }}>Total Sales</span>
+                        <strong style={{ color: '#2563eb' }}>₹{agentProfileData.totalSales.toLocaleString('en-IN')}</strong>
+                      </div>
+                      <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', padding: '10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <span style={{ fontSize: '13px', color: '#475569' }}>Total Collected</span>
+                        <strong style={{ color: '#16a34a' }}>₹{agentProfileData.totalCollected.toLocaleString('en-IN')}</strong>
+                      </div>
+                    </div>
+
+                    {/* Leave History */}
+                    <div>
+                      <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Leave History</h3>
+                      {agentProfileData.allLeaves.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '13px' }}>No leaves taken.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                          {agentProfileData.allLeaves.map((leave, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', backgroundColor: '#f8fafc', borderRadius: '6px', fontSize: '13px' }}>
+                              <span style={{ fontWeight: '500' }}>{new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                              <span style={{ color: '#64748b' }}>{leave.reason}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Statement Drawer */}
           {selectedShopLedger && activeTab === 'history' && (
