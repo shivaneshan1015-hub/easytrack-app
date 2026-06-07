@@ -334,6 +334,7 @@ function AgentPortal() {
         }
       }
       alert(`✅ ${returnType === 'return' ? 'Return' : 'Damage'} recorded!\nCredit: ₹${totalCredit.toLocaleString('en-IN')}`);
+      setDeliveredBills(prev => prev.filter(b => b.id !== returnFormBill.id));
       setReturnFormBill(null);
       setReturnItems([]);
     } catch (err) {

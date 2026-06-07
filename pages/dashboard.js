@@ -319,17 +319,32 @@ function OwnerDashboard() {
   }
 
   useEffect(() => {
-    const channel = supabase
+    const stockChannel = supabase
       .channel('product-stock-watch')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products' }, (payload) => {
         const p = payload.new;
-        const threshold = p.low_stock_threshold ?? 10;
+        const threshold = p.low_stock_threshold || 10;
         if (p.is_active && threshold > 0 && p.inventory_stock <= threshold) {
           addToast(`⚠️ Low stock: ${p.name} — only ${p.inventory_stock} unit${p.inventory_stock === 1 ? '' : 's'} left`);
         }
       })
       .subscribe();
-    return () => supabase.removeChannel(channel);
+
+    const returnsChannel = supabase
+      .channel('returns-watch')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'returns' }, (payload) => {
+        const r = payload.new;
+        const icon = r.return_type === 'return' ? '↩' : '⚠️';
+        const label = r.return_type === 'return' ? 'Return' : 'Damage';
+        addToast(`${icon} ${label} recorded by ${r.agent_name} — ₹${parseFloat(r.total_credit || 0).toLocaleString('en-IN')}${r.reason ? ` · ${r.reason}` : ''}`);
+        loadReturns();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(stockChannel);
+      supabase.removeChannel(returnsChannel);
+    };
   }, []);
 
   async function loadActiveAgentsList() {
