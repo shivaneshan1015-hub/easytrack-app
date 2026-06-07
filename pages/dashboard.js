@@ -330,9 +330,9 @@ function OwnerDashboard() {
       })
       .subscribe();
 
-    // Return/damage notifications — poll every 10 s for returns newer than page load
-    const mountTimestamp = new Date(Date.now() - 3000).toISOString(); // 3s buffer for clock skew
-    let lastSeenTimestamp = mountTimestamp;
+    // Return/damage notifications — poll every 10 s
+    // lastSeenTimestamp is seeded from server to avoid client/server clock skew
+    let lastSeenTimestamp = null;
 
     const notifyReturn = (r) => {
       const icon = r.return_type === 'return' ? '↩' : '⚠️';
@@ -342,26 +342,22 @@ function OwnerDashboard() {
     };
 
     const pollReturns = async () => {
-      console.log('[ET] poll fired, since:', lastSeenTimestamp);
-      const { data, error } = await supabase
+      if (lastSeenTimestamp === null) return;
+      const { data } = await supabase
         .from('returns')
         .select('id, return_type, reason, total_credit, agent_name, created_at')
         .gt('created_at', lastSeenTimestamp)
         .order('created_at', { ascending: true });
-      console.log('[ET] poll result:', data, 'error:', error);
       if (!data || data.length === 0) return;
       data.forEach(r => notifyReturn(r));
       lastSeenTimestamp = data[data.length - 1].created_at;
     };
 
-    const returnsChannel = supabase
-      .channel('easytrack-live')
-      .on('broadcast', { event: 'return_recorded' }, ({ payload }) => {
-        supabase.from('returns').select('created_at').order('created_at', { ascending: false }).limit(1)
-          .then(({ data }) => { if (data?.[0]) lastSeenTimestamp = data[0].created_at; });
-        notifyReturn(payload);
-      })
-      .subscribe();
+    // Seed lastSeenTimestamp from server clock (latest return's created_at)
+    supabase.from('returns').select('created_at').order('created_at', { ascending: false }).limit(1)
+      .then(({ data }) => {
+        lastSeenTimestamp = data?.[0]?.created_at || new Date(0).toISOString();
+      });
 
     const pollTimer = setInterval(pollReturns, 10000);
 
