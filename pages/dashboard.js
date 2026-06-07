@@ -440,7 +440,7 @@ function OwnerDashboard() {
   async function loadInvoiceSettings() {
     setIsLoading(true);
     const { data } = await supabase.from('invoice_settings')
-      .select('*').eq('owner_id', profile?.id ?? '').single();
+      .select('*').eq('owner_id', profile?.id ?? '').maybeSingle();
     if (data) {
       setInvoiceSettings(data);
       if (data.template_mode === 'upload' && data.logo_url) setLetterheadUrl(data.logo_url);
@@ -496,7 +496,7 @@ function OwnerDashboard() {
     setSettingsSaved('');
     try {
       const payload = { ...invoiceSettings, owner_id: profile?.id, updated_at: new Date().toISOString() };
-      const { data: existing } = await supabase.from('invoice_settings').select('id').eq('owner_id', profile?.id).single();
+      const { data: existing } = await supabase.from('invoice_settings').select('id').eq('owner_id', profile?.id).maybeSingle();
       if (existing) {
         await supabase.from('invoice_settings').update(payload).eq('owner_id', profile?.id);
       } else {
