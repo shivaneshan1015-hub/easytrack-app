@@ -604,4 +604,5 @@ function AgentPortal() {
   );
 }
 
-export default withAuth(AgentPortal, ['agent', 'owner']);
+export default withAuth(AgentPortal, ['agent', 'owner']);/ /   u p d a t e d  
+ 
