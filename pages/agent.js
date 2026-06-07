@@ -336,6 +336,24 @@ function AgentPortal() {
         }))
       );
       if (riErr) throw riErr;
+      // Broadcast to dashboard in real-time
+      try {
+        const notifyChannel = supabase.channel('easytrack-live');
+        notifyChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            notifyChannel.send({
+              type: 'broadcast',
+              event: 'return_recorded',
+              payload: {
+                return_type: returnType,
+                agent_name: selectedEmployee || profile?.full_name || '',
+                total_credit: totalCredit,
+                reason: returnReason.trim() || null,
+              }
+            }).then(() => setTimeout(() => supabase.removeChannel(notifyChannel), 2000));
+          }
+        });
+      } catch (_) {}
       // Restore stock only for returns (not damage — goods are unusable)
       if (returnType === 'return') {
         for (const item of toReturn) {

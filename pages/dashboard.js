@@ -331,12 +331,11 @@ function OwnerDashboard() {
       .subscribe();
 
     const returnsChannel = supabase
-      .channel('returns-watch')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'returns' }, (payload) => {
-        const r = payload.new;
-        const icon = r.return_type === 'return' ? '↩' : '⚠️';
-        const label = r.return_type === 'return' ? 'Return' : 'Damage';
-        addToast(`${icon} ${label} recorded by ${r.agent_name} — ₹${parseFloat(r.total_credit || 0).toLocaleString('en-IN')}${r.reason ? ` · ${r.reason}` : ''}`);
+      .channel('easytrack-live')
+      .on('broadcast', { event: 'return_recorded' }, ({ payload }) => {
+        const icon = payload.return_type === 'return' ? '↩' : '⚠️';
+        const label = payload.return_type === 'return' ? 'Return' : 'Damage';
+        addToast(`${icon} ${label} recorded by ${payload.agent_name} — ₹${parseFloat(payload.total_credit || 0).toLocaleString('en-IN')}${payload.reason ? ` · ${payload.reason}` : ''}`);
         loadReturns();
       })
       .subscribe();
