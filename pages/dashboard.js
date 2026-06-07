@@ -149,6 +149,7 @@ function OwnerDashboard() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [chartType, setChartType] = useState('bar');
+  const [returnsList, setReturnsList] = useState([]);
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
 
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -374,6 +375,15 @@ function OwnerDashboard() {
       setIsDeletingAgent(null);
     }
   }
+  async function loadReturns() {
+    const { data } = await supabase
+      .from('returns')
+      .select('id, return_type, reason, total_credit, created_at, agent_name, transaction_id, transactions(bill_number, shops(name))')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (data) setReturnsList(data);
+  }
+
   async function loadShops() {
     setIsLoading(true);
     const [{ data: shopsData }, { data: txData }] = await Promise.all([
@@ -439,7 +449,7 @@ function OwnerDashboard() {
     setSelectedAgentForOrder('');
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); }
     else if (activeTab === 'history') loadHistoryLedger();
-    else if (activeTab === 'finance') calculateFinancialMetrics(dateRange);
+    else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
     else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); }
@@ -1154,6 +1164,59 @@ function OwnerDashboard() {
                       </tr>
                     ))}</tbody>
                   </table>
+                </div>
+
+                {/* ── RETURNS & DAMAGES ── */}
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h3 style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 'bold' }}>↩ Returns & Damages</h3>
+                  {returnsList.length === 0 ? (
+                    <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No returns or damages recorded yet.</p>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        {[
+                          { label: '↩ Total Returns', value: returnsList.filter(r => r.return_type === 'return').reduce((s, r) => s + parseFloat(r.total_credit || 0), 0), color: '#2563eb' },
+                          { label: '⚠️ Total Damages', value: returnsList.filter(r => r.return_type === 'damage').reduce((s, r) => s + parseFloat(r.total_credit || 0), 0), color: '#dc2626' },
+                          { label: '📦 Total Records', value: returnsList.length, color: '#64748b', isCount: true }
+                        ].map(item => (
+                          <div key={item.label} style={{ flex: 1, minWidth: '120px', padding: '14px', backgroundColor: '#f8fafc', borderRadius: '8px', borderLeft: `4px solid ${item.color}` }}>
+                            <span style={{ fontSize: '13px', color: '#64748b' }}>{item.label}</span>
+                            <strong style={{ display: 'block', fontSize: '18px', color: item.color, marginTop: '4px' }}>
+                              {item.isCount ? item.value : `₹${item.value.toLocaleString('en-IN')}`}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Date</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Bill</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Shop</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Type</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Reason</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Credit</th>
+                        </tr></thead>
+                        <tbody>{returnsList.map((r) => (
+                          <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '10px 12px', color: '#64748b' }}>{new Date(r.created_at).toLocaleDateString('en-IN')}</td>
+                            <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{r.transactions?.bill_number || '—'}</td>
+                            <td style={{ padding: '10px 12px' }}>{r.transactions?.shops?.name || '—'}</td>
+                            <td style={{ padding: '10px 12px', color: '#475569' }}>{r.agent_name}</td>
+                            <td style={{ padding: '10px 12px' }}>
+                              <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: r.return_type === 'return' ? '#dbeafe' : '#fee2e2', color: r.return_type === 'return' ? '#1d4ed8' : '#dc2626' }}>
+                                {r.return_type === 'return' ? '↩ Return' : '⚠️ Damage'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.reason || '—'}</td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: r.return_type === 'return' ? '#2563eb' : '#dc2626' }}>₹{parseFloat(r.total_credit || 0).toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                      </div>
+                    </>
+                  )}
                 </div>
 
               </div>

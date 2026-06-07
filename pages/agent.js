@@ -44,6 +44,14 @@ function AgentPortal() {
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [isLoadingLeaves, setIsLoadingLeaves] = useState(false);
 
+  // Returns & Damage
+  const [deliveredBills, setDeliveredBills] = useState([]);
+  const [returnFormBill, setReturnFormBill] = useState(null);
+  const [returnItems, setReturnItems] = useState([]);
+  const [returnType, setReturnType] = useState('return');
+  const [returnReason, setReturnReason] = useState('');
+  const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+
   const generateFreshBillTag = () => {
     const timestamp = Date.now().toString().slice(-6);
     const randomSuffix = Math.floor(100 + Math.random() * 900);
@@ -195,16 +203,29 @@ function AgentPortal() {
     setMatchedOrder(null);
     setAmountReceived('');
     setPendingBills([]);
+    setDeliveredBills([]);
+    setReturnFormBill(null);
+    setReturnItems([]);
     setIsLoadingBills(true);
 
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('id, bill_number, bill_amount, amount_received, pending_amount, status')
-      .eq('shop_id', shop.id)
-      .or('status.eq.approved,and(status.eq.delivered,pending_amount.gt.0)')
-      .order('created_at', { ascending: true });
+    const [pendingRes, deliveredRes] = await Promise.all([
+      supabase
+        .from('transactions')
+        .select('id, bill_number, bill_amount, amount_received, pending_amount, status')
+        .eq('shop_id', shop.id)
+        .or('status.eq.approved,and(status.eq.delivered,pending_amount.gt.0)')
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('transactions')
+        .select('id, bill_number, bill_amount, created_at')
+        .eq('shop_id', shop.id)
+        .eq('status', 'delivered')
+        .order('created_at', { ascending: false })
+        .limit(5)
+    ]);
 
-    if (!error && data) setPendingBills(data);
+    if (!pendingRes.error && pendingRes.data) setPendingBills(pendingRes.data);
+    if (!deliveredRes.error && deliveredRes.data) setDeliveredBills(deliveredRes.data);
     setIsLoadingBills(false);
   };
 
@@ -258,6 +279,68 @@ function AgentPortal() {
   const addOrderItemRow = () => setOrderItems([...orderItems, { productId: '', quantity: 1 }]);
   const removeOrderItemRow = (index) => {
     if (orderItems.length > 1) setOrderItems(orderItems.filter((_, idx) => idx !== index));
+  };
+
+  const handleOpenReturnForm = async (bill) => {
+    if (returnFormBill?.id === bill.id) { setReturnFormBill(null); setReturnItems([]); return; }
+    const { data: items, error } = await supabase
+      .from('transaction_items')
+      .select('id, quantity, product_id, total_price, products(id, name, unit_price)')
+      .eq('transaction_id', bill.id);
+    if (error || !items) return alert('Could not load bill items.');
+    setReturnItems(items.map(item => ({ ...item, returnQty: 0 })));
+    setReturnType('return');
+    setReturnReason('');
+    setReturnFormBill(bill);
+  };
+
+  const handleSubmitReturn = async () => {
+    const toReturn = returnItems.filter(item => item.returnQty > 0);
+    if (toReturn.length === 0) return alert('Enter a return quantity for at least one item.');
+    setIsSubmittingReturn(true);
+    try {
+      const totalCredit = toReturn.reduce(
+        (sum, item) => sum + parseFloat(item.products?.unit_price || 0) * item.returnQty, 0
+      );
+      const { data: ret, error: retErr } = await supabase
+        .from('returns')
+        .insert([{
+          transaction_id: returnFormBill.id,
+          shop_id: selectedDeliveryShop.id,
+          agent_name: selectedEmployee || profile?.full_name || '',
+          return_type: returnType,
+          reason: returnReason.trim() || null,
+          total_credit: totalCredit
+        }])
+        .select().single();
+      if (retErr) throw retErr;
+      const { error: riErr } = await supabase.from('return_items').insert(
+        toReturn.map(item => ({
+          return_id: ret.id,
+          product_id: item.product_id,
+          product_name: item.products?.name || '',
+          quantity: item.returnQty,
+          unit_price: parseFloat(item.products?.unit_price || 0)
+        }))
+      );
+      if (riErr) throw riErr;
+      // Restore stock only for returns (not damage — goods are unusable)
+      if (returnType === 'return') {
+        for (const item of toReturn) {
+          const { data: prod } = await supabase.from('products').select('inventory_stock').eq('id', item.product_id).single();
+          await supabase.from('products').update({
+            inventory_stock: (prod?.inventory_stock || 0) + item.returnQty
+          }).eq('id', item.product_id);
+        }
+      }
+      alert(`✅ ${returnType === 'return' ? 'Return' : 'Damage'} recorded!\nCredit: ₹${totalCredit.toLocaleString('en-IN')}`);
+      setReturnFormBill(null);
+      setReturnItems([]);
+    } catch (err) {
+      alert('Failed: ' + err.message);
+    } finally {
+      setIsSubmittingReturn(false);
+    }
   };
 
   const handleConfirmDelivery = async (e) => {
@@ -538,6 +621,91 @@ function AgentPortal() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── RECENT DELIVERIES — RETURN / DAMAGE ── */}
+            {selectedDeliveryShop && deliveredBills.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>Recent Deliveries:</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {deliveredBills.map((bill) => (
+                    <div key={bill.id}>
+                      <div style={{ padding: '12px 14px', borderRadius: '8px', border: returnFormBill?.id === bill.id ? '2px solid #f97316' : '1px solid #e2e8f0', backgroundColor: returnFormBill?.id === bill.id ? '#fff7ed' : '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '13px' }}>{bill.bill_number}</p>
+                          <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>₹{bill.bill_amount} · {new Date(bill.created_at).toLocaleDateString('en-IN')}</p>
+                        </div>
+                        <button type="button" onClick={() => handleOpenReturnForm(bill)}
+                          style={{ padding: '7px 14px', backgroundColor: returnFormBill?.id === bill.id ? '#f1f5f9' : '#fff7ed', color: returnFormBill?.id === bill.id ? '#64748b' : '#c2410c', border: `1px solid ${returnFormBill?.id === bill.id ? '#e2e8f0' : '#fed7aa'}`, borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                          {returnFormBill?.id === bill.id ? '✕ Cancel' : '↩ Return/Damage'}
+                        </button>
+                      </div>
+
+                      {returnFormBill?.id === bill.id && (
+                        <div style={{ padding: '16px', border: '2px solid #f97316', borderRadius: '0 0 8px 8px', backgroundColor: '#fff7ed', marginTop: '-2px' }}>
+                          <h4 style={{ margin: '0 0 12px', color: '#c2410c', fontSize: '15px' }}>↩ Record Return / Damage</h4>
+
+                          {/* Type selector */}
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                            {['return', 'damage'].map(t => (
+                              <button key={t} type="button" onClick={() => setReturnType(t)}
+                                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `2px solid ${returnType === t ? (t === 'return' ? '#16a34a' : '#dc2626') : '#e2e8f0'}`, backgroundColor: returnType === t ? (t === 'return' ? '#f0fdf4' : '#fef2f2') : '#ffffff', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', color: returnType === t ? (t === 'return' ? '#15803d' : '#dc2626') : '#475569' }}>
+                                {t === 'return' ? '↩ Return' : '⚠️ Damage'}
+                              </button>
+                            ))}
+                          </div>
+                          <p style={{ margin: '0 0 12px', fontSize: '12px', color: returnType === 'return' ? '#15803d' : '#dc2626', fontWeight: '500' }}>
+                            {returnType === 'return' ? '✅ Stock will be added back to inventory' : '⚠️ Stock will NOT be restored (goods are unusable)'}
+                          </p>
+
+                          {/* Items */}
+                          <p style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>Select quantities to return:</p>
+                          {returnItems.map((item, idx) => (
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '6px', border: item.returnQty > 0 ? '1px solid #f97316' : '1px solid #e2e8f0' }}>
+                              <div>
+                                <p style={{ margin: '0', fontSize: '14px', fontWeight: '500' }}>{item.products?.name}</p>
+                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Delivered: {item.quantity} · ₹{item.products?.unit_price} each</p>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '12px', color: '#64748b' }}>Qty:</span>
+                                <input type="number" min="0" max={item.quantity} value={item.returnQty}
+                                  onChange={(e) => {
+                                    const val = Math.min(parseInt(e.target.value) || 0, item.quantity);
+                                    setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, returnQty: val } : it));
+                                  }}
+                                  style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '14px', backgroundColor: '#ffffff', color: '#0f172a' }} />
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* Credit preview */}
+                          {returnItems.some(i => i.returnQty > 0) && (
+                            <div style={{ padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '12px', border: '1px solid #fed7aa', fontSize: '13px' }}>
+                              Credit amount: <strong>₹{returnItems.reduce((sum, item) => sum + parseFloat(item.products?.unit_price || 0) * item.returnQty, 0).toLocaleString('en-IN')}</strong>
+                            </div>
+                          )}
+
+                          {/* Reason */}
+                          <input type="text" placeholder="Reason (e.g. shop rejected, expired, damaged in transit)" value={returnReason}
+                            onChange={(e) => setReturnReason(e.target.value)}
+                            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box', marginBottom: '12px', backgroundColor: '#ffffff', color: '#0f172a' }} />
+
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button type="button" onClick={() => { setReturnFormBill(null); setReturnItems([]); }}
+                              style={{ flex: 1, padding: '12px', backgroundColor: '#ffffff', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                              Cancel
+                            </button>
+                            <button type="button" onClick={handleSubmitReturn} disabled={isSubmittingReturn || !returnItems.some(i => i.returnQty > 0)}
+                              style={{ flex: 2, padding: '12px', backgroundColor: isSubmittingReturn ? '#94a3b8' : '#f97316', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isSubmittingReturn ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
+                              {isSubmittingReturn ? 'Recording...' : `✅ Record ${returnType === 'return' ? 'Return' : 'Damage'}`}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
