@@ -342,11 +342,13 @@ function OwnerDashboard() {
     };
 
     const pollReturns = async () => {
-      const { data } = await supabase
+      console.log('[ET] poll fired, since:', lastSeenTimestamp);
+      const { data, error } = await supabase
         .from('returns')
         .select('id, return_type, reason, total_credit, agent_name, created_at')
         .gt('created_at', lastSeenTimestamp)
         .order('created_at', { ascending: true });
+      console.log('[ET] poll result:', data, 'error:', error);
       if (!data || data.length === 0) return;
       data.forEach(r => notifyReturn(r));
       lastSeenTimestamp = data[data.length - 1].created_at;
