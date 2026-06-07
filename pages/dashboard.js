@@ -364,7 +364,6 @@ function OwnerDashboard() {
     return () => {
       clearInterval(pollTimer);
       supabase.removeChannel(stockChannel);
-      supabase.removeChannel(returnsChannel);
     };
   }, []);
 
