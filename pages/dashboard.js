@@ -330,17 +330,43 @@ function OwnerDashboard() {
       })
       .subscribe();
 
+    // Return/damage notifications — poll every 15 s (broadcast is bonus fast path)
+    let latestReturnId = null;
+    let returnInitialized = false;
+
+    const notifyReturn = (r) => {
+      const icon = r.return_type === 'return' ? '↩' : '⚠️';
+      const label = r.return_type === 'return' ? 'Return' : 'Damage';
+      addToast(`${icon} ${label} recorded by ${r.agent_name} — ₹${parseFloat(r.total_credit || 0).toLocaleString('en-IN')}${r.reason ? ` · ${r.reason}` : ''}`);
+      loadReturns();
+    };
+
+    const pollReturns = async () => {
+      const { data } = await supabase
+        .from('returns')
+        .select('id, return_type, reason, total_credit, agent_name')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!data || data.length === 0) { returnInitialized = true; return; }
+      if (!returnInitialized) { latestReturnId = data[0].id; returnInitialized = true; return; }
+      if (data[0].id !== latestReturnId) { latestReturnId = data[0].id; notifyReturn(data[0]); }
+    };
+
     const returnsChannel = supabase
       .channel('easytrack-live')
       .on('broadcast', { event: 'return_recorded' }, ({ payload }) => {
-        const icon = payload.return_type === 'return' ? '↩' : '⚠️';
-        const label = payload.return_type === 'return' ? 'Return' : 'Damage';
-        addToast(`${icon} ${label} recorded by ${payload.agent_name} — ₹${parseFloat(payload.total_credit || 0).toLocaleString('en-IN')}${payload.reason ? ` · ${payload.reason}` : ''}`);
-        loadReturns();
+        // Fast path — may fire instantly if broadcast works
+        supabase.from('returns').select('id').order('created_at', { ascending: false }).limit(1)
+          .then(({ data }) => { if (data?.[0]) latestReturnId = data[0].id; });
+        notifyReturn(payload);
       })
       .subscribe();
 
+    pollReturns(); // seed latestReturnId on mount
+    const pollTimer = setInterval(pollReturns, 15000);
+
     return () => {
+      clearInterval(pollTimer);
       supabase.removeChannel(stockChannel);
       supabase.removeChannel(returnsChannel);
     };
