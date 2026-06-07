@@ -330,9 +330,9 @@ function OwnerDashboard() {
       })
       .subscribe();
 
-    // Return/damage notifications — poll every 15 s (broadcast is bonus fast path)
-    let latestReturnId = null;
-    let returnInitialized = false;
+    // Return/damage notifications — poll every 10 s for returns newer than page load
+    const mountTimestamp = new Date(Date.now() - 3000).toISOString(); // 3s buffer for clock skew
+    let lastSeenTimestamp = mountTimestamp;
 
     const notifyReturn = (r) => {
       const icon = r.return_type === 'return' ? '↩' : '⚠️';
@@ -344,26 +344,24 @@ function OwnerDashboard() {
     const pollReturns = async () => {
       const { data } = await supabase
         .from('returns')
-        .select('id, return_type, reason, total_credit, agent_name')
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (!data || data.length === 0) { returnInitialized = true; return; }
-      if (!returnInitialized) { latestReturnId = data[0].id; returnInitialized = true; return; }
-      if (data[0].id !== latestReturnId) { latestReturnId = data[0].id; notifyReturn(data[0]); }
+        .select('id, return_type, reason, total_credit, agent_name, created_at')
+        .gt('created_at', lastSeenTimestamp)
+        .order('created_at', { ascending: true });
+      if (!data || data.length === 0) return;
+      data.forEach(r => notifyReturn(r));
+      lastSeenTimestamp = data[data.length - 1].created_at;
     };
 
     const returnsChannel = supabase
       .channel('easytrack-live')
       .on('broadcast', { event: 'return_recorded' }, ({ payload }) => {
-        // Fast path — may fire instantly if broadcast works
-        supabase.from('returns').select('id').order('created_at', { ascending: false }).limit(1)
-          .then(({ data }) => { if (data?.[0]) latestReturnId = data[0].id; });
+        supabase.from('returns').select('created_at').order('created_at', { ascending: false }).limit(1)
+          .then(({ data }) => { if (data?.[0]) lastSeenTimestamp = data[0].created_at; });
         notifyReturn(payload);
       })
       .subscribe();
 
-    pollReturns(); // seed latestReturnId on mount
-    const pollTimer = setInterval(pollReturns, 15000);
+    const pollTimer = setInterval(pollReturns, 10000);
 
     return () => {
       clearInterval(pollTimer);
