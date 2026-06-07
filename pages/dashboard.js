@@ -393,7 +393,7 @@ function OwnerDashboard() {
   async function loadReturns() {
     const { data } = await supabase
       .from('returns')
-      .select('id, return_type, reason, total_credit, created_at, agent_name, transaction_id, transactions(bill_number, shops(name))')
+      .select('id, return_type, reason, total_credit, created_at, agent_name, transaction_id, transactions(bill_number, shops(name)), return_items(product_name, quantity, unit_price)')
       .order('created_at', { ascending: false })
       .limit(50);
     if (data) setReturnsList(data);
@@ -1203,13 +1203,14 @@ function OwnerDashboard() {
                         ))}
                       </div>
                       <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                           <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Date</th>
                           <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Bill</th>
                           <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Shop</th>
                           <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
                           <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Type</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Products</th>
                           <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Reason</th>
                           <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Credit</th>
                         </tr></thead>
@@ -1224,7 +1225,18 @@ function OwnerDashboard() {
                                 {r.return_type === 'return' ? '↩ Return' : '⚠️ Damage'}
                               </span>
                             </td>
-                            <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.reason || '—'}</td>
+                            <td style={{ padding: '10px 12px', maxWidth: '200px' }}>
+                              {(r.return_items || []).length === 0 ? <span style={{ color: '#94a3b8' }}>—</span> : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  {r.return_items.map((item, i) => (
+                                    <span key={i} style={{ fontSize: '12px', color: '#334155' }}>
+                                      {item.product_name} × {item.quantity}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.reason || '—'}</td>
                             <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: r.return_type === 'return' ? '#2563eb' : '#dc2626' }}>₹{parseFloat(r.total_credit || 0).toLocaleString('en-IN')}</td>
                           </tr>
                         ))}</tbody>
