@@ -101,6 +101,7 @@ function OwnerDashboard() {
   const [historyOrders, setHistoryOrders] = useState([]);
   const [registeredShops, setRegisteredShops] = useState([]);
   const [productsCatalog, setProductsCatalog] = useState([]);
+  const [allActiveProducts, setAllActiveProducts] = useState([]);
   const [activeAgents, setActiveAgents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -479,10 +480,47 @@ function OwnerDashboard() {
 
   const handleReviewClick = async (order) => {
     setSelectedOrder(order);
+    // Load existing order items
     const { data } = await supabase.from('transaction_items')
       .select(`id, quantity, total_price, products ( id, name, unit_price, inventory_stock )`)
       .eq('transaction_id', order.id);
-    if (data) setOrderItems(data);
+
+    if (data) {
+      // For each item, fetch the LATEST stock from products table
+      const itemsWithLiveStock = await Promise.all(data.map(async (item) => {
+        const { data: liveProduct } = await supabase
+          .from('products')
+          .select('inventory_stock, is_active')
+          .eq('id', item.products?.id)
+          .single();
+        return {
+          ...item,
+          products: {
+            ...item.products,
+            inventory_stock: liveProduct ? liveProduct.inventory_stock : 0
+          }
+        };
+      }));
+      setOrderItems(itemsWithLiveStock);
+    }
+  };
+
+  const handleAddProductToOrder = (productId) => {
+    if (!productId) return;
+    const prod = allActiveProducts.find(p => p.id === productId);
+    if (!prod) return;
+    // Check if already in order
+    const existing = orderItems.find(item => item.products?.id === productId);
+    if (existing) return alert(`${prod.name} is already in this order. Update the quantity instead.`);
+    // Add as new item (no id means it will be inserted)
+    setOrderItems([...orderItems, {
+      id: null,
+      isNew: true,
+      product_id: productId,
+      quantity: 1,
+      total_price: prod.unit_price,
+      products: { id: productId, name: prod.name, unit_price: prod.unit_price, inventory_stock: prod.inventory_stock }
+    }]);
   };
 
   const handleQuantityEdit = (index, newQty) => {
@@ -498,11 +536,28 @@ function OwnerDashboard() {
     try {
       let total = 0;
       for (const item of orderItems) {
-        total += item.total_price;
-        await supabase.from('transaction_items').update({ quantity: item.quantity, total_price: item.total_price }).eq('id', item.id);
+        const lineTotal = (item.products?.unit_price || 0) * item.quantity;
+        total += lineTotal;
+        if (item.isNew) {
+          // Insert new item
+          await supabase.from('transaction_items').insert([{
+            transaction_id: selectedOrder.id,
+            product_id: item.products?.id,
+            quantity: item.quantity,
+            total_price: lineTotal
+          }]);
+        } else {
+          // Update existing item
+          await supabase.from('transaction_items').update({ quantity: item.quantity, total_price: lineTotal }).eq('id', item.id);
+        }
       }
       await supabase.from('transactions').update({ bill_amount: total }).eq('id', selectedOrder.id);
-      alert('Updated!'); loadPendingOrders();
+      alert('✅ Order updated!'); loadPendingOrders();
+      // Refresh order items
+      const { data } = await supabase.from('transaction_items')
+        .select(`id, quantity, total_price, products ( id, name, unit_price, inventory_stock )`)
+        .eq('transaction_id', selectedOrder.id);
+      if (data) setOrderItems(data);
     } catch (err) { console.error(err); } finally { setIsUpdating(false); }
   };
 
@@ -1710,7 +1765,7 @@ function OwnerDashboard() {
 
           {/* Order Review Drawer */}
           {selectedOrder && activeTab === 'pending' && (
-            <div style={{ width: '400px', backgroundColor: '#ffffff', borderRadius: '8px', border: '2px solid #2563eb', padding: '25px', boxSizing: 'border-box' }}>
+            <div style={{ width: '400px', backgroundColor: '#ffffff', borderRadius: '8px', border: '2px solid #2563eb', padding: '25px', boxSizing: 'border-box', maxHeight: '90vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <h3 style={{ margin: '0', fontSize: '18px', color: '#1e3a8a' }}>Order Review</h3>
                 <button onClick={() => setSelectedOrder(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
@@ -1727,16 +1782,22 @@ function OwnerDashboard() {
                   {activeAgents.map(agent => <option key={agent.id} value={agent.name}>{agent.name}</option>)}
                 </select>
               </div>
-              <h4 style={{ fontSize: '14px', margin: '0 0 10px', color: '#475569' }}>Products</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h4 style={{ fontSize: '14px', margin: '0', color: '#475569' }}>Products</h4>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>Live stock</span>
+              </div>
               {orderItems.map((item, idx) => {
                 const stock = item.products?.inventory_stock || 0;
-                const isShortage = item.quantity > stock;
+                const isOutOfStock = stock === 0;
+                const isShortage = item.quantity > stock && stock > 0;
                 return (
-                  <div key={item.id} style={{ padding: '10px', backgroundColor: isShortage ? '#fff5f5' : '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: isShortage ? '1px solid #fecaca' : '1px solid #e2e8f0' }}>
+                  <div key={item.id || idx} style={{ padding: '10px', backgroundColor: isOutOfStock ? '#fff5f5' : isShortage ? '#fffbeb' : '#f8fafc', borderRadius: '6px', marginBottom: '10px', border: isOutOfStock ? '1px solid #fecaca' : isShortage ? '1px solid #fbbf24' : '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ flexGrow: 1 }}>
-                        <span style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: isShortage ? '#991b1b' : '#0f172a' }}>{item.products?.name}</span>
-                        <span style={{ fontSize: '12px', color: isShortage ? '#dc2626' : '#64748b' }}>Stock: {stock}</span>
+                        <span style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: isOutOfStock ? '#991b1b' : '#0f172a' }}>{item.products?.name}</span>
+                        <span style={{ fontSize: '12px', color: isOutOfStock ? '#dc2626' : isShortage ? '#d97706' : '#64748b' }}>
+                          {isOutOfStock ? '⛔ Out of stock' : isShortage ? `⚠️ Only ${stock} in stock` : `✅ Stock: ${stock}`}
+                        </span>
                       </div>
                       <input type="number" min="1" value={item.quantity} onChange={(e) => handleQuantityEdit(idx, e.target.value)}
                         style={{ width: '65px', padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', textAlign: 'center' }} />
@@ -1746,8 +1807,13 @@ function OwnerDashboard() {
               })}
               <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '2px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <span style={{ fontWeight: 'bold', color: '#475569' }}>Total:</span>
-                <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#16a34a' }}>₹{orderItems.reduce((acc, curr) => acc + (curr.total_price || 0), 0).toLocaleString('en-IN')}</span>
+                <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#16a34a' }}>₹{orderItems.reduce((acc, curr) => acc + ((curr.products?.unit_price || 0) * curr.quantity), 0).toLocaleString('en-IN')}</span>
               </div>
+              {orderItems.some(item => (item.products?.inventory_stock || 0) === 0) && (
+                <div style={{ padding: '10px', backgroundColor: '#fff5f5', border: '1px solid #fecaca', borderRadius: '6px', marginBottom: '12px', fontSize: '12px', color: '#991b1b' }}>
+                  ⛔ Some items are out of stock. Please adjust quantities before approving.
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <button onClick={handleUpdateDraft} disabled={isUpdating} style={{ width: '100%', padding: '10px', backgroundColor: '#ffffff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>💾 Save Changes</button>
                 <button onClick={handleApproveAndRelease} disabled={isUpdating} style={{ width: '100%', padding: '14px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>🚀 Approve & Release</button>
