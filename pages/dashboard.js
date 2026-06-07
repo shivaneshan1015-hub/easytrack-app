@@ -115,6 +115,17 @@ function OwnerDashboard() {
   const [agentProfileData, setAgentProfileData] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
+  // Route planner states
+  const [routeAgent, setRouteAgent] = useState('');
+  const [routeStartMode, setRouteStartMode] = useState('gps');
+  const [routeStartCoords, setRouteStartCoords] = useState(null);
+  const [customStartLat, setCustomStartLat] = useState('');
+  const [customStartLng, setCustomStartLng] = useState('');
+  const [isCapturingRouteGps, setIsCapturingRouteGps] = useState(false);
+  const [isGeneratingRoute, setIsGeneratingRoute] = useState(false);
+  const [optimizedRoute, setOptimizedRoute] = useState([]);
+  const [routeTotalDistance, setRouteTotalDistance] = useState(0);
+
   const [shopsList, setShopsList] = useState([]);
   const [newShopName, setNewShopName] = useState('');
   const [newShopPhone, setNewShopPhone] = useState('');
@@ -396,7 +407,7 @@ function OwnerDashboard() {
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') calculateFinancialMetrics(dateRange);
-    else if (activeTab === 'map') loadRouteMapLocations();
+    else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
     else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
@@ -579,6 +590,113 @@ function OwnerDashboard() {
     });
     setIsLoadingProfile(false);
   }
+
+  // Capture GPS for route start
+  const captureRouteStartGps = () => {
+    setIsCapturingRouteGps(true);
+    if (!navigator.geolocation) { alert('GPS not supported'); setIsCapturingRouteGps(false); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setRouteStartCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setIsCapturingRouteGps(false); },
+      () => { alert('Could not get location'); setIsCapturingRouteGps(false); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Calculate distance between two coordinates (Haversine formula)
+  const calcDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
+  // Nearest neighbor route optimization
+  const generateOptimizedRoute = async () => {
+    if (!routeAgent) return alert('Please select an agent first.');
+
+    // Get start coordinates
+    let startLat, startLng;
+    if (routeStartMode === 'gps') {
+      if (!routeStartCoords) return alert('Please capture your current location first.');
+      startLat = routeStartCoords.lat;
+      startLng = routeStartCoords.lng;
+    } else {
+      if (!customStartLat || !customStartLng) return alert('Please enter custom coordinates.');
+      startLat = parseFloat(customStartLat);
+      startLng = parseFloat(customStartLng);
+    }
+
+    setIsGeneratingRoute(true);
+
+    // Get all shops that have approved transactions for this agent
+    const { data: agentTx } = await supabase
+      .from('transactions')
+      .select('shop_id')
+      .eq('employee_name', routeAgent)
+      .eq('status', 'approved');
+
+    const shopIds = [...new Set((agentTx || []).map(t => t.shop_id))];
+
+    // Get shop details with GPS
+    let shops = [];
+    if (shopIds.length > 0) {
+      const { data: shopData } = await supabase
+        .from('shops')
+        .select('id, name, phone_number, latitude, longitude')
+        .in('id', shopIds)
+        .not('latitude', 'is', null);
+      shops = shopData || [];
+    }
+
+    if (shops.length === 0) {
+      setIsGeneratingRoute(false);
+      alert(`No shops with GPS coordinates found for ${routeAgent}. Showing all shops instead.`);
+      const { data: allShops } = await supabase.from('shops').select('id, name, phone_number, latitude, longitude').not('latitude', 'is', null);
+      shops = allShops || [];
+    }
+
+    // Nearest neighbor algorithm
+    let remaining = [...shops];
+    let route = [];
+    let currentLat = startLat;
+    let currentLng = startLng;
+    let totalDist = 0;
+
+    while (remaining.length > 0) {
+      let nearestIdx = 0;
+      let nearestDist = Infinity;
+
+      remaining.forEach((shop, i) => {
+        const d = calcDistance(currentLat, currentLng, parseFloat(shop.latitude), parseFloat(shop.longitude));
+        if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+      });
+
+      const nearest = remaining[nearestIdx];
+      const distFromPrev = calcDistance(currentLat, currentLng, parseFloat(nearest.latitude), parseFloat(nearest.longitude));
+      totalDist += distFromPrev;
+
+      route.push({ ...nearest, distanceFromPrev: distFromPrev.toFixed(1) });
+      currentLat = parseFloat(nearest.latitude);
+      currentLng = parseFloat(nearest.longitude);
+      remaining.splice(nearestIdx, 1);
+    }
+
+    setOptimizedRoute(route);
+    setRouteTotalDistance(totalDist.toFixed(1));
+    setIsGeneratingRoute(false);
+  };
+
+  // Generate Google Maps URL with all waypoints
+  const generateGoogleMapsUrl = () => {
+    if (optimizedRoute.length === 0) return '#';
+    const origin = routeStartCoords ? `${routeStartCoords.lat},${routeStartCoords.lng}` : `${customStartLat},${customStartLng}`;
+    const destination = `${optimizedRoute[optimizedRoute.length-1].latitude},${optimizedRoute[optimizedRoute.length-1].longitude}`;
+    const waypoints = optimizedRoute.slice(0, -1).map(s => `${s.latitude},${s.longitude}`).join('|');
+    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
+  };
 
   const tabStyle = (tab) => ({
     padding: '12px 16px', backgroundColor: activeTab === tab ? '#1e293b' : 'transparent',
@@ -939,25 +1057,143 @@ function OwnerDashboard() {
               </div>
 
             ) : activeTab === 'map' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', width: '100%' }}>
-                <InteractiveRouteMap shops={registeredShops} />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                  {registeredShops.map((shop) => {
-                    const hasCoordinates = shop.latitude && shop.longitude;
-                    return (
-                      <div key={shop.id} style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
-                        <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 'bold' }}>{shop.name}</h3>
-                        <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#64748b' }}>📞 {shop.phone_number || 'No contact'}</p>
-                        {hasCoordinates ? (
-                          <a href={`https://www.google.com/maps/search/?api=1&query=${shop.latitude},${shop.longitude}`} target="_blank" rel="noopener noreferrer"
-                            style={{ display: 'block', textAlign: 'center', padding: '8px', backgroundColor: '#0f172a', color: '#fff', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>🗺️ Google Maps</a>
-                        ) : (
-                          <button disabled style={{ width: '100%', padding: '8px', backgroundColor: '#e2e8f0', color: '#94a3b8', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'not-allowed' }}>No GPS</button>
-                        )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
+
+                {/* ── AI ROUTE PLANNER ── */}
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '24px' }}>🤖</span>
+                    <h3 style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>AI Route Optimizer</h3>
+                  </div>
+                  <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Select an agent and starting point — AI will calculate the optimal delivery route to minimize travel time.</p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                    {/* Agent Selector */}
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '13px' }}>Select Agent</label>
+                      <select value={routeAgent} onChange={e => setRouteAgent(e.target.value)}
+                        style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', backgroundColor: '#ffffff' }}>
+                        <option value="">-- Select Agent --</option>
+                        {activeAgents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Starting Point */}
+                    <div>
+                      <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>Starting Point</label>
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                        <button type="button"
+                          onClick={() => setRouteStartMode('gps')}
+                          style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `2px solid ${routeStartMode === 'gps' ? '#2563eb' : '#e2e8f0'}`, backgroundColor: routeStartMode === 'gps' ? '#eff6ff' : '#ffffff', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', color: routeStartMode === 'gps' ? '#1d4ed8' : '#475569' }}>
+                          📍 My Current Location (HQ)
+                        </button>
+                        <button type="button"
+                          onClick={() => setRouteStartMode('custom')}
+                          style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `2px solid ${routeStartMode === 'custom' ? '#2563eb' : '#e2e8f0'}`, backgroundColor: routeStartMode === 'custom' ? '#eff6ff' : '#ffffff', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', color: routeStartMode === 'custom' ? '#1d4ed8' : '#475569' }}>
+                          ✏️ Custom Location
+                        </button>
                       </div>
-                    );
-                  })}
+
+                      {routeStartMode === 'gps' && (
+                        <div>
+                          <button type="button" onClick={captureRouteStartGps}
+                            disabled={isCapturingRouteGps}
+                            style={{ width: '100%', padding: '12px', backgroundColor: routeStartCoords ? '#10b981' : '#0f172a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
+                            {isCapturingRouteGps ? '📡 Getting Location...' : routeStartCoords ? `✅ Location Captured (${routeStartCoords.lat.toFixed(4)}, ${routeStartCoords.lng.toFixed(4)})` : '📍 Capture My Current Location'}
+                          </button>
+                        </div>
+                      )}
+
+                      {routeStartMode === 'custom' && (
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Latitude</label>
+                            <input type="number" step="0.0001" placeholder="e.g. 9.9252" value={customStartLat}
+                              onChange={e => setCustomStartLat(e.target.value)}
+                              style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Longitude</label>
+                            <input type="number" step="0.0001" placeholder="e.g. 78.1198" value={customStartLng}
+                              onChange={e => setCustomStartLng(e.target.value)}
+                              style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Generate Button */}
+                    <button type="button" onClick={generateOptimizedRoute}
+                      disabled={isGeneratingRoute || !routeAgent}
+                      style={{ padding: '14px', backgroundColor: isGeneratingRoute ? '#94a3b8' : '#7c3aed', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: isGeneratingRoute || !routeAgent ? 'not-allowed' : 'pointer' }}>
+                      {isGeneratingRoute ? '🤖 Optimizing Route...' : '🤖 Generate Optimized Route'}
+                    </button>
+                  </div>
                 </div>
+
+                {/* ── OPTIMIZED ROUTE RESULT ── */}
+                {optimizedRoute.length > 0 && (
+                  <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                      <div>
+                        <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 'bold' }}>🗺️ Optimized Route for {routeAgent}</h3>
+                        <p style={{ margin: '0', fontSize: '13px', color: '#64748b' }}>
+                          {optimizedRoute.length} stops • Est. distance: ~{routeTotalDistance} km
+                        </p>
+                      </div>
+                      <a href={generateGoogleMapsUrl()} target="_blank" rel="noopener noreferrer"
+                        style={{ padding: '10px 20px', backgroundColor: '#16a34a', color: '#ffffff', textDecoration: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px' }}>
+                        🗺️ Open in Google Maps
+                      </a>
+                    </div>
+
+                    {/* Route Steps */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                      {/* Start point */}
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', paddingBottom: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#0f172a', color: '#4ade80', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px', flexShrink: 0 }}>🏠</div>
+                          <div style={{ width: '2px', flex: 1, backgroundColor: '#e2e8f0', marginTop: '4px', minHeight: '20px' }}></div>
+                        </div>
+                        <div style={{ paddingTop: '6px' }}>
+                          <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>Starting Point</p>
+                          <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{routeStartMode === 'gps' ? 'Your Current Location (HQ)' : 'Custom Location'}</p>
+                        </div>
+                      </div>
+
+                      {optimizedRoute.map((shop, i) => (
+                        <div key={shop.id} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', paddingBottom: '12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#2563eb', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '13px', flexShrink: 0 }}>{i + 1}</div>
+                            {i < optimizedRoute.length - 1 && <div style={{ width: '2px', flex: 1, backgroundColor: '#e2e8f0', marginTop: '4px', minHeight: '20px' }}></div>}
+                          </div>
+                          <div style={{ paddingTop: '6px', flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div>
+                                <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>{shop.name}</p>
+                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>📞 {shop.phone_number || 'No contact'}</p>
+                                {shop.distanceFromPrev && <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#94a3b8' }}>~{shop.distanceFromPrev} km from previous stop</p>}
+                              </div>
+                              <a href={`https://www.google.com/maps/search/?api=1&query=${shop.latitude},${shop.longitude}`}
+                                target="_blank" rel="noopener noreferrer"
+                                style={{ padding: '4px 10px', backgroundColor: '#f1f5f9', color: '#475569', textDecoration: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>
+                                Maps
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── LIVE MAP ── */}
+                <div>
+                  <h3 style={{ fontSize: '15px', margin: '0 0 12px', fontWeight: 'bold' }}>📍 All Shop Locations</h3>
+                  <InteractiveRouteMap shops={optimizedRoute.length > 0 ? optimizedRoute : registeredShops} />
+                </div>
+
               </div>
 
             ) : activeTab === 'shops' ? (
