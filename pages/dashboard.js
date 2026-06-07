@@ -170,6 +170,13 @@ function OwnerDashboard() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingLetterhead, setIsUploadingLetterhead] = useState(false);
   const [letterheadUrl, setLetterheadUrl] = useState('');
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  };
 
   async function loadPendingOrders() {
     setIsLoading(true);
@@ -305,10 +312,24 @@ function OwnerDashboard() {
 
   async function loadMasterProducts() {
     setIsLoading(true);
-    const { data } = await supabase.from('products').select('id, name, unit_price, inventory_stock, is_active').order('name', { ascending: true });
+    const { data } = await supabase.from('products').select('id, name, unit_price, inventory_stock, is_active, low_stock_threshold').order('name', { ascending: true });
     if (data) setProductsCatalog(data);
     setIsLoading(false);
   }
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('product-stock-watch')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products' }, (payload) => {
+        const p = payload.new;
+        const threshold = p.low_stock_threshold ?? 10;
+        if (p.is_active && threshold > 0 && p.inventory_stock <= threshold) {
+          addToast(`⚠️ Low stock: ${p.name} — only ${p.inventory_stock} unit${p.inventory_stock === 1 ? '' : 's'} left`);
+        }
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
 
   async function loadActiveAgentsList() {
     const { data } = await supabase.from('employees').select('id, name').order('name', { ascending: true });
@@ -819,6 +840,21 @@ function OwnerDashboard() {
             {activeTab === 'admin' && 'Management Panel'}
           </h1>
         </header>
+
+        {(() => {
+          const lowStock = productsCatalog.filter(p =>
+            p.is_active !== false &&
+            (p.low_stock_threshold || 10) > 0 &&
+            p.inventory_stock <= (p.low_stock_threshold || 10)
+          );
+          if (lowStock.length === 0) return null;
+          const names = lowStock.map(p => `${p.name} (${p.inventory_stock} units)`).join(', ');
+          return (
+            <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 18px', marginBottom: '24px', fontSize: '14px', color: '#92400e', fontWeight: '500' }}>
+              ⚠️ {lowStock.length} product{lowStock.length > 1 ? 's' : ''} low: {names}
+            </div>
+          );
+        })()}
 
         <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start' }}>
           <div style={{ flexGrow: 1 }}>
@@ -1350,8 +1386,18 @@ function OwnerDashboard() {
                         <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(shop.created_at).toLocaleDateString('en-IN')}</td>
                         <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
                           <button onClick={async () => {
-                            const { error } = await supabase.from('shops').update({ name: shop.name, phone_number: shop.phone_number, credit_limit: shop.credit_limit ?? 0 }).eq('id', shop.id);
-                            if (error) alert('Failed.'); else alert('✅ Saved!');
+                            const updatePayload = { name: shop.name, phone_number: shop.phone_number, credit_limit: shop.credit_limit ?? 0 };
+                            console.log('[shops] saving shop', shop.id, 'payload:', updatePayload);
+                            const { error: saveError } = await supabase.from('shops').update(updatePayload).eq('id', shop.id);
+                            console.log('[shops] save error:', saveError);
+                            if (saveError) {
+                              alert('Save failed: ' + saveError.message);
+                            } else {
+                              // Verify what's actually stored
+                              const { data: verify } = await supabase.from('shops').select('credit_limit').eq('id', shop.id).single();
+                              console.log('[shops] verified credit_limit in DB after save:', verify?.credit_limit);
+                              alert(`✅ Saved! credit_limit in DB: ${verify?.credit_limit}`);
+                            }
                           }} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
                           <button onClick={async () => {
                             if (!window.confirm(`Delete "${shop.name}"?`)) return;
@@ -1552,6 +1598,22 @@ function OwnerDashboard() {
               /* Management Panel */
               <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
 
+                {/* Low Stock Banner */}
+                {(() => {
+                  const lowStock = productsCatalog.filter(p =>
+                    p.is_active !== false &&
+                    (p.low_stock_threshold || 10) > 0 &&
+                    p.inventory_stock <= (p.low_stock_threshold || 10)
+                  );
+                  if (lowStock.length === 0) return null;
+                  const names = lowStock.map(p => `${p.name} (${p.inventory_stock} units)`).join(', ');
+                  return (
+                    <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 18px', fontSize: '14px', color: '#92400e', fontWeight: '500' }}>
+                      ⚠️ Low Stock: {names}
+                    </div>
+                  );
+                })()}
+
                 {/* 1. Invite New Agent */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Invite New Agent</h3>
@@ -1640,8 +1702,9 @@ function OwnerDashboard() {
                     const name = form.prodName.value.trim();
                     const price = parseFloat(form.prodPrice.value) || 0;
                     const stock = parseInt(form.prodStock.value) || 0;
+                    const threshold = parseInt(form.prodThreshold.value) || 10;
                     if (!name) return alert('Enter product name.');
-                    const { error } = await supabase.from('products').insert([{ id: crypto.randomUUID(), name, unit_price: price, inventory_stock: stock, is_active: true }]);
+                    const { error } = await supabase.from('products').insert([{ id: crypto.randomUUID(), name, unit_price: price, inventory_stock: stock, low_stock_threshold: threshold, is_active: true }]);
                     if (error) alert(`Error: ${error.message}`);
                     else { alert(`✅ "${name}" added!`); form.reset(); loadMasterProducts(); }
                   }} style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'flex-end', marginTop: '20px' }}>
@@ -1657,6 +1720,10 @@ function OwnerDashboard() {
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Stock</label>
                       <input type="number" name="prodStock" placeholder="100" min="0" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
                     </div>
+                    <div style={{ width: '130px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Alert below</label>
+                      <input type="number" name="prodThreshold" placeholder="10" min="0" defaultValue="10" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                    </div>
                     <button type="submit" style={{ padding: '12px 24px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>📦 Add</button>
                   </form>
                 </div>
@@ -1664,15 +1731,20 @@ function OwnerDashboard() {
                 {/* 4. Product Catalog */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>Product Catalog</h3>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '16px', color: '#475569' }}>Name</th>
                       <th style={{ padding: '16px', color: '#475569', width: '160px' }}>Price (₹)</th>
                       <th style={{ padding: '16px', color: '#475569', width: '160px' }}>Stock</th>
+                      <th style={{ padding: '16px', color: '#475569', width: '130px' }}>Min Stock</th>
                       <th style={{ padding: '16px', color: '#475569', width: '200px' }}>Actions</th>
                     </tr></thead>
-                    <tbody>{productsCatalog.filter(p => p.is_active !== false).map((prod) => (
-                      <tr key={prod.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <tbody>{productsCatalog.filter(p => p.is_active !== false).map((prod) => {
+                      const threshold = prod.low_stock_threshold || 10;
+                      const isLow = threshold > 0 && prod.inventory_stock <= threshold;
+                      return (
+                      <tr key={prod.id} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: isLow ? '#fffbeb' : 'transparent' }}>
                         <td style={{ padding: '16px' }}>
                           <input type="text" value={prod.name} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].name = e.target.value; setProductsCatalog(u); }}
                             style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
@@ -1682,13 +1754,20 @@ function OwnerDashboard() {
                             style={{ width: '110px', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', color: '#16a34a', fontWeight: 'bold' }} />
                         </td>
                         <td style={{ padding: '16px' }}>
-                          <input type="number" value={prod.inventory_stock} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].inventory_stock = e.target.value; setProductsCatalog(u); }}
-                            style={{ width: '110px', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontWeight: 'bold' }} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <input type="number" value={prod.inventory_stock} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].inventory_stock = e.target.value; setProductsCatalog(u); }}
+                              style={{ width: '90px', padding: '8px', borderRadius: '4px', border: `1px solid ${isLow ? '#dc2626' : '#cbd5e1'}`, fontWeight: 'bold', color: isLow ? '#dc2626' : '#0f172a' }} />
+                            {isLow && <span style={{ fontSize: '14px' }}>⚠️</span>}
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px' }}>
+                          <input type="number" min="0" value={threshold} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].low_stock_threshold = parseInt(e.target.value) || 0; setProductsCatalog(u); }}
+                            style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', color: '#64748b' }} />
                         </td>
                         <td style={{ padding: '16px', display: 'flex', gap: '8px' }}>
                           <button onClick={async () => {
-                            const { error } = await supabase.from('products').update({ name: prod.name, unit_price: parseFloat(prod.unit_price) || 0, inventory_stock: parseInt(prod.inventory_stock) || 0 }).eq('id', prod.id);
-                            if (error) alert('Error.'); else alert('✅ Saved!');
+                            const { error } = await supabase.from('products').update({ name: prod.name, unit_price: parseFloat(prod.unit_price) || 0, inventory_stock: parseInt(prod.inventory_stock) || 0, low_stock_threshold: parseInt(prod.low_stock_threshold) || 0 }).eq('id', prod.id);
+                            if (error) alert('Save failed: ' + error.message); else { alert('✅ Saved!'); loadMasterProducts(); }
                           }} style={{ padding: '8px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
                           <button onClick={async () => {
                             if (window.confirm(`Remove "${prod.name}"?`)) {
@@ -1698,8 +1777,10 @@ function OwnerDashboard() {
                           }} style={{ padding: '8px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
                         </td>
                       </tr>
-                    ))}</tbody>
+                    );
+                    })}</tbody>
                   </table>
+                  </div>
                 </div>
               </div>
             )}
@@ -1865,6 +1946,18 @@ function OwnerDashboard() {
           )}
         </div>
       </main>
+
+      {/* ── TOAST NOTIFICATIONS ── */}
+      {toasts.length > 0 && (
+        <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {toasts.map(t => (
+            <div key={t.id} style={{ backgroundColor: '#1e293b', color: '#f8fafc', padding: '14px 18px', borderRadius: '8px', fontSize: '14px', boxShadow: '0 4px 20px rgba(0,0,0,0.25)', maxWidth: '340px', display: 'flex', alignItems: 'flex-start', gap: '12px', borderLeft: '4px solid #f59e0b' }}>
+              <span style={{ flex: 1, lineHeight: '1.4' }}>{t.message}</span>
+              <button onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0', lineHeight: 1 }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── PRINT INVOICE ── */}
       {selectedPrintInvoice && (

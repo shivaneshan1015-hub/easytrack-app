@@ -309,16 +309,45 @@ function AgentPortal() {
         cumulativeBillSum += rowSum;
         return { product_id: item.productId, quantity: item.quantity, total_price: rowSum };
       });
-      const creditCheck = await checkCreditAvailable(supabase, targetShopId, cumulativeBillSum);
-      if (!creditCheck.allowed) {
-        throw new Error(
-          `Credit limit exceeded for this shop.\nLimit: ₹${creditCheck.creditLimit.toLocaleString('en-IN')} | Used: ₹${creditCheck.creditUsed.toLocaleString('en-IN')} | This order: ₹${cumulativeBillSum.toLocaleString('en-IN')}`
-        );
+      // --- CREDIT LIMIT CHECK ---
+      const { data: shopCredit, error: creditFetchErr } = await supabase
+        .from('shops')
+        .select('credit_limit, name')
+        .eq('id', targetShopId)
+        .single();
+      console.log('[credit] shop row:', shopCredit, '| fetchErr:', creditFetchErr);
+      if (creditFetchErr) throw new Error('Could not verify credit limit: ' + creditFetchErr.message);
+      const creditLimit = parseFloat(shopCredit?.credit_limit ?? 0);
+      console.log('[credit] creditLimit parsed:', creditLimit);
+      if (creditLimit > 0) {
+        const { data: openTx, error: txFetchErr } = await supabase
+          .from('transactions')
+          .select('bill_amount')
+          .eq('shop_id', targetShopId)
+          .neq('status', 'delivered');
+        console.log('[credit] open transactions:', openTx, '| txFetchErr:', txFetchErr);
+        const creditUsed = (openTx || []).reduce((s, tx) => s + parseFloat(tx.bill_amount || 0), 0);
+        const available = Math.max(0, creditLimit - creditUsed);
+        console.log('[credit] used:', creditUsed, '| new order:', cumulativeBillSum, '| available:', available);
+        if (creditUsed + cumulativeBillSum > creditLimit) {
+          const msg = `❌ Credit limit exceeded for ${shopCredit.name}.\n\nLimit: ₹${creditLimit.toLocaleString('en-IN')}\nAlready used: ₹${creditUsed.toLocaleString('en-IN')}\nThis order: ₹${cumulativeBillSum.toLocaleString('en-IN')}\nAvailable: ₹${available.toLocaleString('en-IN')}`;
+          alert(msg);
+          setIsSubmitting(false);
+          return;
+        }
       }
       const { data: txData, error: txErr } = await supabase.from('transactions')
         .insert([{ bill_number: billNumber, shop_id: targetShopId, employee_name: selectedEmployee, status: 'draft', bill_amount: cumulativeBillSum }])
         .select().single();
-      if (txErr) throw txErr;
+      if (txErr) {
+        // Trigger fires 'credit_limit_exceeded'; human detail is in hint
+        const msg = txErr.message === 'credit_limit_exceeded'
+          ? 'Order blocked: Shop has reached its credit limit. Please collect payment before placing new orders.'
+          : `Order failed: ${txErr.message}`;
+        alert(msg);
+        setIsSubmitting(false);
+        return;
+      }
       await supabase.from('transaction_items').insert(formulatedItems.map(item => ({ transaction_id: txData.id, ...item })));
       alert(`✅ Order ${billNumber} submitted!`);
       setOrderItems([{ productId: '', quantity: 1 }]);
