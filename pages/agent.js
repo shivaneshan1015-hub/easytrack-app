@@ -221,11 +221,23 @@ function AgentPortal() {
         .eq('shop_id', shop.id)
         .eq('status', 'delivered')
         .order('created_at', { ascending: false })
-        .limit(5)
+        .limit(10)
     ]);
 
     if (!pendingRes.error && pendingRes.data) setPendingBills(pendingRes.data);
-    if (!deliveredRes.error && deliveredRes.data) setDeliveredBills(deliveredRes.data);
+
+    const deliveredData = deliveredRes.error ? [] : (deliveredRes.data || []);
+    if (deliveredData.length > 0) {
+      const txIds = deliveredData.map(b => b.id);
+      const { data: existingReturns } = await supabase
+        .from('returns')
+        .select('transaction_id')
+        .in('transaction_id', txIds);
+      const returnedSet = new Set((existingReturns || []).map(r => r.transaction_id));
+      setDeliveredBills(deliveredData.filter(b => !returnedSet.has(b.id)));
+    } else {
+      setDeliveredBills([]);
+    }
     setIsLoadingBills(false);
   };
 
