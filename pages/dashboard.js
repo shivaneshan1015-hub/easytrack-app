@@ -355,8 +355,19 @@ function OwnerDashboard() {
   }
   async function loadShops() {
     setIsLoading(true);
-    const { data } = await supabase.from('shops').select('*').order('name', { ascending: true });
-    if (data) setShopsList(data);
+    const [{ data: shopsData }, { data: txData }] = await Promise.all([
+      supabase.from('shops').select('*').order('name', { ascending: true }),
+      supabase.from('transactions').select('shop_id, pending_amount').neq('status', 'delivered'),
+    ]);
+    if (shopsData) {
+      const withCredit = shopsData.map(shop => {
+        const used = (txData || [])
+          .filter(tx => tx.shop_id === shop.id)
+          .reduce((sum, tx) => sum + parseFloat(tx.pending_amount || 0), 0);
+        return { ...shop, credit_used: used };
+      });
+      setShopsList(withCredit);
+    }
     setIsLoading(false);
   }
 
@@ -1288,6 +1299,8 @@ function OwnerDashboard() {
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Phone</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>GPS</th>
+                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Credit Limit (₹)</th>
+                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px', minWidth: '160px' }}>Credit Usage</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Added</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Actions</th>
                     </tr></thead>
@@ -1304,10 +1317,40 @@ function OwnerDashboard() {
                         <td style={{ padding: '14px 16px', fontSize: '13px', color: shop.latitude ? '#16a34a' : '#94a3b8' }}>
                           {shop.latitude ? `${parseFloat(shop.latitude).toFixed(4)}, ${parseFloat(shop.longitude).toFixed(4)}` : 'Not set'}
                         </td>
+                        <td style={{ padding: '14px 16px' }}>
+                          <input
+                            type="number" min="0" step="100"
+                            value={shop.credit_limit ?? 0}
+                            onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, credit_limit: parseFloat(e.target.value) || 0 } : s))}
+                            placeholder="0 = no limit"
+                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '110px' }}
+                          />
+                        </td>
+                        <td style={{ padding: '14px 16px' }}>
+                          {(() => {
+                            const limit = parseFloat(shop.credit_limit || 0);
+                            const used = parseFloat(shop.credit_used || 0);
+                            if (limit <= 0) return <span style={{ fontSize: '12px', color: '#94a3b8' }}>No limit</span>;
+                            const pct = Math.min(100, (used / limit) * 100);
+                            const barColor = pct >= 90 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#10b981';
+                            return (
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                                  <span>₹{used.toLocaleString('en-IN')}</span>
+                                  <span>₹{limit.toLocaleString('en-IN')}</span>
+                                </div>
+                                <div style={{ height: '8px', borderRadius: '4px', backgroundColor: '#e2e8f0', overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${pct}%`, backgroundColor: barColor, borderRadius: '4px', transition: 'width 0.3s' }} />
+                                </div>
+                                <div style={{ fontSize: '11px', color: barColor, marginTop: '3px', fontWeight: '600' }}>{pct.toFixed(0)}% used</div>
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(shop.created_at).toLocaleDateString('en-IN')}</td>
                         <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
                           <button onClick={async () => {
-                            const { error } = await supabase.from('shops').update({ name: shop.name, phone_number: shop.phone_number }).eq('id', shop.id);
+                            const { error } = await supabase.from('shops').update({ name: shop.name, phone_number: shop.phone_number, credit_limit: shop.credit_limit ?? 0 }).eq('id', shop.id);
                             if (error) alert('Failed.'); else alert('✅ Saved!');
                           }} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
                           <button onClick={async () => {

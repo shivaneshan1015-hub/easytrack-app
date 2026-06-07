@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth, withAuth } from '../hooks/useAuth';
+import { checkCreditAvailable } from '../lib/credit';
 
 function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
@@ -308,6 +309,12 @@ function AgentPortal() {
         cumulativeBillSum += rowSum;
         return { product_id: item.productId, quantity: item.quantity, total_price: rowSum };
       });
+      const creditCheck = await checkCreditAvailable(supabase, targetShopId, cumulativeBillSum);
+      if (!creditCheck.allowed) {
+        throw new Error(
+          `Credit limit exceeded for this shop.\nLimit: ₹${creditCheck.creditLimit.toLocaleString('en-IN')} | Used: ₹${creditCheck.creditUsed.toLocaleString('en-IN')} | This order: ₹${cumulativeBillSum.toLocaleString('en-IN')}`
+        );
+      }
       const { data: txData, error: txErr } = await supabase.from('transactions')
         .insert([{ bill_number: billNumber, shop_id: targetShopId, employee_name: selectedEmployee, status: 'draft', bill_amount: cumulativeBillSum }])
         .select().single();
