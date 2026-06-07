@@ -54,7 +54,7 @@ function AgentPortal() {
     if (empData) setEmployees(empData);
     const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude');
     if (shopData) setShops(shopData);
-    const { data: prodData } = await supabase.from('products').select('id, name, unit_price');
+    const { data: prodData } = await supabase.from('products').select('id, name, unit_price').eq('is_active', true);
     if (prodData) setProductCatalog(prodData);
   }
 
