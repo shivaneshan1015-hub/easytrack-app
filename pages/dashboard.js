@@ -132,6 +132,7 @@ function OwnerDashboard() {
   const [newShopPhone, setNewShopPhone] = useState('');
   const [newShopAddress, setNewShopAddress] = useState('');
   const [isAddingShop, setIsAddingShop] = useState(false);
+  const [capturingGpsFor, setCapturingGpsFor] = useState(null);
 
   const [selectedShopLedger, setSelectedShopLedger] = useState(null);
   const [shopLedgerHistory, setShopLedgerHistory] = useState([]);
@@ -1529,8 +1530,29 @@ function OwnerDashboard() {
                           <input type="text" value={shop.address || ''} placeholder="Street, Area, City" onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, address: e.target.value } : s))}
                             style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '200px' }} />
                         </td>
-                        <td style={{ padding: '14px 16px', fontSize: '13px', color: shop.latitude ? '#16a34a' : '#94a3b8' }}>
-                          {shop.latitude ? `${parseFloat(shop.latitude).toFixed(4)}, ${parseFloat(shop.longitude).toFixed(4)}` : 'Not set'}
+                        <td style={{ padding: '14px 16px', fontSize: '13px' }}>
+                          {shop.latitude && (
+                            <div style={{ color: '#16a34a', marginBottom: '4px' }}>
+                              {parseFloat(shop.latitude).toFixed(4)}, {parseFloat(shop.longitude).toFixed(4)}
+                            </div>
+                          )}
+                          <button
+                            disabled={capturingGpsFor === shop.id}
+                            onClick={() => {
+                              if (!navigator.geolocation) return alert('GPS not supported by this browser.');
+                              setCapturingGpsFor(shop.id);
+                              navigator.geolocation.getCurrentPosition(
+                                (pos) => {
+                                  setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, latitude: pos.coords.latitude, longitude: pos.coords.longitude } : s));
+                                  setCapturingGpsFor(null);
+                                },
+                                () => { alert('Could not get location. Check browser permissions.'); setCapturingGpsFor(null); },
+                                { enableHighAccuracy: true, timeout: 10000 }
+                              );
+                            }}
+                            style={{ padding: '4px 8px', backgroundColor: shop.latitude ? '#f1f5f9' : '#eff6ff', color: shop.latitude ? '#475569' : '#2563eb', border: `1px solid ${shop.latitude ? '#e2e8f0' : '#bfdbfe'}`, borderRadius: '4px', cursor: capturingGpsFor === shop.id ? 'not-allowed' : 'pointer', fontSize: '11px', fontWeight: '600' }}>
+                            {capturingGpsFor === shop.id ? '⏳ Capturing…' : shop.latitude ? '📍 Re-capture' : '📍 Set GPS'}
+                          </button>
                         </td>
                         <td style={{ padding: '14px 16px' }}>
                           <input
@@ -1565,7 +1587,7 @@ function OwnerDashboard() {
                         <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(shop.created_at).toLocaleDateString('en-IN')}</td>
                         <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
                           <button onClick={async () => {
-                            const updatePayload = { name: shop.name, phone_number: shop.phone_number, address: shop.address || null, credit_limit: shop.credit_limit ?? 0 };
+                            const updatePayload = { name: shop.name, phone_number: shop.phone_number, address: shop.address || null, credit_limit: shop.credit_limit ?? 0, latitude: shop.latitude || null, longitude: shop.longitude || null };
                             const { error: saveError } = await supabase.from('shops').update(updatePayload).eq('id', shop.id);
                             if (saveError) {
                               alert('Save failed: ' + saveError.message);
