@@ -91,11 +91,24 @@ export default function LoginPage() {
           href="https://fonts.googleapis.com/css2?family=Syne:wght@600;800&family=DM+Sans:wght@400;500&display=swap"
           rel="stylesheet"
         />
+        <style>{`
+          @media (max-width: 767px) {
+            .et-root { flex-direction: column !important; }
+            .et-brand { display: none !important; }
+            .et-form-panel {
+              width: 100% !important;
+              min-height: 100vh;
+              padding: 48px 24px !important;
+              justify-content: flex-start !important;
+              padding-top: 64px !important;
+            }
+          }
+        `}</style>
       </Head>
 
-      <div style={styles.root}>
+      <div style={styles.root} className="et-root">
         {/* Left panel */}
-        <div style={styles.brandPanel}>
+        <div style={styles.brandPanel} className="et-brand">
           <div style={styles.brandInner}>
             <div style={styles.logo}>
               <span style={styles.logoMark}>ET</span>
@@ -121,7 +134,7 @@ export default function LoginPage() {
         </div>
 
         {/* Right panel */}
-        <div style={styles.formPanel}>
+        <div style={styles.formPanel} className="et-form-panel">
           <div style={styles.formCard}>
 
             <div style={styles.formHeader}>
