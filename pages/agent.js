@@ -55,6 +55,13 @@ function AgentPortal() {
   const [returnReason, setReturnReason] = useState('');
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
 
+  const [toasts, setToasts] = useState([]);
+  const addToast = (message) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  };
+
   const generateFreshBillTag = () => {
     const timestamp = Date.now().toString().slice(-6);
     const randomSuffix = Math.floor(100 + Math.random() * 900);
@@ -379,7 +386,7 @@ function AgentPortal() {
           }).eq('id', item.product_id);
         }
       }
-      alert(`✅ ${returnType === 'return' ? 'Return' : 'Damage'} recorded!\nCredit: ₹${totalCredit.toLocaleString('en-IN')}`);
+      addToast(`✅ ${returnType === 'return' ? 'Return' : 'Damage'} recorded — Credit: ₹${totalCredit.toLocaleString('en-IN')}`);
       setDeliveredBills(prev => prev.filter(b => b.id !== returnFormBill.id));
       setReturnFormBill(null);
       setReturnItems([]);
@@ -408,7 +415,7 @@ function AgentPortal() {
       }).eq('id', matchedOrder.id).select();
 
       if (error) { alert('Update failed: ' + error.message); return; }
-      alert(`✅ Collected ₹${newCashInput}. Remaining: ₹${finalRemainingPending}`);
+      addToast(`✅ Collected ₹${newCashInput.toLocaleString('en-IN')} — Remaining: ₹${finalRemainingPending.toLocaleString('en-IN')}`);
       setMatchedOrder(null); setAmountReceived('');
       if (selectedDeliveryShop) handleDeliveryShopSelect(selectedDeliveryShop);
     } catch (err) {
@@ -475,7 +482,7 @@ function AgentPortal() {
         return;
       }
       await supabase.from('transaction_items').insert(formulatedItems.map(item => ({ transaction_id: txData.id, ...item })));
-      alert(`✅ Order ${billNumber} submitted!`);
+      addToast(`✅ Order ${billNumber} submitted!`);
       setOrderItems([{ productId: '', quantity: 1 }]);
       setNewShopName(''); setWhatsappNumber('');
       setGpsCoordinates({ lat: null, lng: null }); setGpsStatus('Not Anchored');
@@ -873,6 +880,18 @@ function AgentPortal() {
           </div>
         )}
       </div>
+
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div style={{ position: 'fixed', bottom: '70px', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', gap: '8px', zIndex: 200, width: 'calc(100% - 32px)', maxWidth: '468px' }}>
+          {toasts.map(t => (
+            <div key={t.id} style={{ backgroundColor: '#0f172a', color: '#f8fafc', padding: '12px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '500', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{t.message}</span>
+              <button onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', padding: '0 0 0 12px', lineHeight: 1 }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Mobile bottom nav */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '2px solid #f1f5f9', display: 'flex', zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)' }}>

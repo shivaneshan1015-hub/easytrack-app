@@ -425,7 +425,7 @@ function OwnerDashboard() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      alert(`Agent "${agent.full_name}" removed successfully. Their bills are preserved.`);
+      addToast(`✅ Agent "${agent.full_name}" removed. Their bills are preserved.`);
       loadAgentsList();
     } catch (err) {
       alert("Failed to remove agent: " + err.message);
@@ -660,7 +660,7 @@ function OwnerDashboard() {
         }
       }
       await supabase.from('transactions').update({ bill_amount: total }).eq('id', selectedOrder.id);
-      alert('✅ Order updated!'); loadPendingOrders();
+      addToast('✅ Order updated!'); loadPendingOrders();
       // Refresh order items
       const { data } = await supabase.from('transaction_items')
         .select(`id, quantity, total_price, products ( id, name, unit_price, inventory_stock )`)
@@ -678,7 +678,7 @@ function OwnerDashboard() {
         await supabase.from('products').update({ inventory_stock: (item.products?.inventory_stock || 0) - item.quantity }).eq('id', item.products.id);
       }
       await supabase.from('transactions').update({ status: 'approved', employee_name: selectedAgentForOrder }).eq('id', selectedOrder.id);
-      alert(`Released to "${selectedAgentForOrder}"!`);
+      addToast(`✅ Released to ${selectedAgentForOrder}!`);
       setSelectedOrder(null); setSelectedAgentForOrder(''); loadPendingOrders();
     } catch (err) { alert('Error.'); } finally { setIsUpdating(false); }
   };
@@ -693,7 +693,7 @@ function OwnerDashboard() {
         delivered_at: new Date().toISOString()
       }).eq('id', transactionId);
       if (error) throw error;
-      alert('Delivery settled!'); loadHistoryLedger();
+      addToast('✅ Delivery settled!'); loadHistoryLedger();
     } catch (err) { alert('Failed.'); } finally { setIsUpdating(false); }
   };
 
@@ -1563,7 +1563,7 @@ function OwnerDashboard() {
                       const { error } = await supabase.from('shops').insert([{ name: newShopName.trim(), phone_number: newShopPhone.trim(), address: newShopAddress.trim() || null }]);
                       setIsAddingShop(false);
                       if (error) alert('Failed: ' + error.message);
-                      else { alert(`✅ "${newShopName}" added!`); setNewShopName(''); setNewShopPhone(''); setNewShopAddress(''); loadShops(); }
+                      else { addToast(`✅ "${newShopName}" added!`); setNewShopName(''); setNewShopPhone(''); setNewShopAddress(''); loadShops(); }
                     }} disabled={isAddingShop}
                       style={{ padding: '10px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>
                       {isAddingShop ? 'Adding...' : '➕ Add Shop'}
@@ -1662,7 +1662,7 @@ function OwnerDashboard() {
                             if (saveError) {
                               alert('Save failed: ' + saveError.message);
                             } else {
-                              alert('✅ Saved!');
+                              addToast('✅ Shop saved!');
                             }
                           }} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
                           <button onClick={async () => {
@@ -1814,7 +1814,7 @@ function OwnerDashboard() {
                         <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
                             <div><strong style={{ fontSize: '14px' }}>DELIVERY INVOICE</strong></div>
-                            <div style={{ textAlign: 'right', fontSize: '11px' }}><div>Bill No: ET-2026-XXXXX</div><div>Date: {new Date().toLocaleDateString('en-IN')}</div></div>
+                            <div style={{ textAlign: 'right', fontSize: '11px' }}><div>Bill No: ET-2026-482931-847</div><div>Date: {new Date().toLocaleDateString('en-IN')}</div></div>
                           </div>
                           <div style={{ fontSize: '11px', color: '#333' }}>Bill To: [Shop Name] | Agent: [Agent Name]</div>
                           <div style={{ marginTop: '10px', fontSize: '10px', color: '#555' }}>Products and amounts will appear here...</div>
@@ -1832,7 +1832,7 @@ function OwnerDashboard() {
                           </div>
                           <div style={{ textAlign: 'right' }}>
                             <div style={{ backgroundColor: '#0f172a', color: '#fff', padding: '4px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', marginBottom: '6px', display: 'inline-block' }}>DELIVERY INVOICE</div>
-                            <div style={{ fontSize: '11px' }}>Bill No: ET-2026-XXXXX</div>
+                            <div style={{ fontSize: '11px' }}>Bill No: ET-2026-482931-847</div>
                             <div style={{ fontSize: '11px', color: '#555' }}>Date: {new Date().toLocaleDateString('en-IN')}</div>
                           </div>
                         </div>
@@ -1975,7 +1975,7 @@ function OwnerDashboard() {
                     if (!name) return alert('Enter product name.');
                     const { error } = await supabase.from('products').insert([{ id: crypto.randomUUID(), name, unit_price: price, inventory_stock: stock, low_stock_threshold: threshold, is_active: true }]);
                     if (error) alert(`Error: ${error.message}`);
-                    else { alert(`✅ "${name}" added!`); form.reset(); loadMasterProducts(); }
+                    else { addToast(`✅ "${name}" added!`); form.reset(); loadMasterProducts(); }
                   }} style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'flex-end', marginTop: '20px' }}>
                     <div style={{ flex: '1', minWidth: '200px' }}>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Product Name</label>
@@ -2115,7 +2115,7 @@ function OwnerDashboard() {
                         <td style={{ padding: '16px', display: 'flex', gap: '8px' }}>
                           <button onClick={async () => {
                             const { error } = await supabase.from('products').update({ name: prod.name, unit_price: parseFloat(prod.unit_price) || 0, inventory_stock: parseInt(prod.inventory_stock) || 0, low_stock_threshold: parseInt(prod.low_stock_threshold) || 0 }).eq('id', prod.id);
-                            if (error) alert('Save failed: ' + error.message); else { alert('✅ Saved!'); loadMasterProducts(); }
+                            if (error) alert('Save failed: ' + error.message); else { addToast('✅ Product saved!'); loadMasterProducts(); }
                           }} style={{ padding: '8px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
                           <button onClick={async () => {
                             if (window.confirm(`Remove "${prod.name}"?`)) {
