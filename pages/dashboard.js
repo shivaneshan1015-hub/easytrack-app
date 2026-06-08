@@ -879,9 +879,13 @@ function OwnerDashboard() {
   return (
     <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', display: 'flex', color: '#0f172a', fontFamily: 'sans-serif', position: 'relative' }}>
 
-      {/* Mobile backdrop */}
+      {/* Mobile backdrop — sidebar */}
       {isMobile && sidebarOpen && (
         <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 40 }} />
+      )}
+      {/* Mobile backdrop — drawers */}
+      {isMobile && ((selectedShopLedger && activeTab === 'history') || (selectedOrder && activeTab === 'pending')) && (
+        <div onClick={() => { setSelectedShopLedger(null); setSelectedOrder(null); }} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 198 }} />
       )}
 
       {/* Sidebar */}
@@ -918,7 +922,7 @@ function OwnerDashboard() {
       </aside>
 
       {/* Main */}
-      <main style={{ flexGrow: 1, padding: isMobile ? '16px 16px 74px' : '40px', boxSizing: 'border-box', minWidth: 0 }} className="no-print">
+      <main style={{ flexGrow: 1, padding: isMobile ? '16px 16px calc(74px + env(safe-area-inset-bottom))' : '40px', boxSizing: 'border-box', minWidth: 0 }} className="no-print">
         <header style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '12px' }}>
           {isMobile && (
             <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px 6px', color: '#1e293b', flexShrink: 0, lineHeight: 1 }}>☰</button>
@@ -1146,7 +1150,7 @@ function OwnerDashboard() {
 
                 {/* ── DAILY SALES TREND ── */}
                 <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
                     <h3 style={{ margin: '0', fontSize: '15px', fontWeight: 'bold' }}>Daily Sales Trend</h3>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button onClick={() => setChartType('bar')}
@@ -1541,21 +1545,21 @@ function OwnerDashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Add New Shop</h3>
-                  <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'flex-end', marginTop: '20px' }}>
-                    <div>
+                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', flexWrap: 'wrap', alignItems: isMobile ? 'stretch' : 'flex-end', marginTop: '20px' }}>
+                    <div style={{ flex: isMobile ? '1' : 'none' }}>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Shop Name</label>
                       <input type="text" placeholder="e.g. Sri Murugan Stores" value={newShopName} onChange={(e) => setNewShopName(e.target.value)}
-                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: '250px' }} />
+                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '250px', boxSizing: 'border-box' }} />
                     </div>
-                    <div>
+                    <div style={{ flex: isMobile ? '1' : 'none' }}>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Phone</label>
                       <input type="tel" placeholder="9876543210" value={newShopPhone} onChange={(e) => setNewShopPhone(e.target.value)}
-                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: '180px' }} />
+                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '180px', boxSizing: 'border-box' }} />
                     </div>
-                    <div>
+                    <div style={{ flex: isMobile ? '1' : 'none' }}>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Address</label>
                       <input type="text" placeholder="Street, Area, City" value={newShopAddress} onChange={(e) => setNewShopAddress(e.target.value)}
-                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: '260px' }} />
+                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '260px', boxSizing: 'border-box' }} />
                     </div>
                     <button onClick={async () => {
                       if (!newShopName.trim()) return alert('Enter shop name.');
@@ -1687,7 +1691,7 @@ function OwnerDashboard() {
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 8px 0', fontSize: '18px' }}>Choose Invoice Style</h3>
                   <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Select how your invoice will look when printed.</p>
-                  <div style={{ display: 'flex', gap: '16px' }}>
+                  <div style={{ display: 'flex', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
                     <div
                       onClick={() => setInvoiceSettings({ ...invoiceSettings, template_mode: 'custom' })}
                       style={{ flex: 1, padding: '20px', borderRadius: '8px', border: `2px solid ${invoiceSettings.template_mode === 'custom' ? '#2563eb' : '#e2e8f0'}`, cursor: 'pointer', backgroundColor: invoiceSettings.template_mode === 'custom' ? '#eff6ff' : '#ffffff', transition: 'all 0.2s' }}
@@ -2208,12 +2212,12 @@ function OwnerDashboard() {
 
           {/* Statement Drawer */}
           {selectedShopLedger && activeTab === 'history' && (
-            <div style={{ width: '420px', backgroundColor: '#ffffff', borderRadius: '8px', border: '2px solid #2563eb', padding: '25px', boxSizing: 'border-box' }} className="no-print">
+            <div style={isMobile ? { position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 199, backgroundColor: '#ffffff', borderRadius: '16px 16px 0 0', padding: '24px 20px calc(80px + env(safe-area-inset-bottom))', maxHeight: '72vh', overflowY: 'auto', boxShadow: '0 -4px 24px rgba(0,0,0,0.15)' } : { width: '420px', backgroundColor: '#ffffff', borderRadius: '8px', border: '2px solid #2563eb', padding: '25px', boxSizing: 'border-box' }} className="no-print">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
                 <h3 style={{ margin: '0', fontSize: '16px', color: '#1e3a8a' }}>📜 {selectedShopLedger}</h3>
                 <button onClick={() => setSelectedShopLedger(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '550px', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: isMobile ? undefined : '550px', overflowY: isMobile ? undefined : 'auto' }}>
                 {shopLedgerHistory.length === 0 ? <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center' }}>No records.</p> :
                   shopLedgerHistory.map((ledger, idx) => (
                     <div key={idx} style={{ padding: '12px', borderLeft: '4px solid #cbd5e1', backgroundColor: '#f8fafc', borderRadius: '0 6px 6px 0', fontSize: '13px' }}>
@@ -2237,7 +2241,7 @@ function OwnerDashboard() {
 
           {/* Order Review Drawer */}
           {selectedOrder && activeTab === 'pending' && (
-            <div style={{ width: '400px', backgroundColor: '#ffffff', borderRadius: '8px', border: '2px solid #2563eb', padding: '25px', boxSizing: 'border-box', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={isMobile ? { position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 199, backgroundColor: '#ffffff', borderRadius: '16px 16px 0 0', padding: '24px 20px calc(80px + env(safe-area-inset-bottom))', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -4px 24px rgba(0,0,0,0.15)' } : { width: '400px', backgroundColor: '#ffffff', borderRadius: '8px', border: '2px solid #2563eb', padding: '25px', boxSizing: 'border-box', maxHeight: '90vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <h3 style={{ margin: '0', fontSize: '18px', color: '#1e3a8a' }}>Order Review</h3>
                 <button onClick={() => setSelectedOrder(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
@@ -2297,7 +2301,7 @@ function OwnerDashboard() {
 
       {/* ── TOAST NOTIFICATIONS ── */}
       {toasts.length > 0 && (
-        <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ position: 'fixed', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px', ...(isMobile ? { bottom: 'calc(74px + env(safe-area-inset-bottom))', left: '16px', right: '16px' } : { bottom: '24px', right: '24px', maxWidth: '360px' }) }}>
           {toasts.map(t => (
             <div key={t.id} style={{ backgroundColor: '#1e293b', color: '#f8fafc', padding: '14px 18px', borderRadius: '8px', fontSize: '14px', boxShadow: '0 4px 20px rgba(0,0,0,0.25)', maxWidth: '340px', display: 'flex', alignItems: 'flex-start', gap: '12px', borderLeft: '4px solid #f59e0b' }}>
               <span style={{ flex: 1, lineHeight: '1.4' }}>{t.message}</span>

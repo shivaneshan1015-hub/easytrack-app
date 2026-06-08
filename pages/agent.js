@@ -504,7 +504,7 @@ function AgentPortal() {
   });
 
   return (
-    <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', padding: '20px 20px 74px', color: '#0f172a' }}>
+    <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', padding: '20px 20px calc(74px + env(safe-area-inset-bottom))', color: '#0f172a' }}>
       <div style={{ fontFamily: 'sans-serif', maxWidth: '500px', margin: '0 auto' }}>
 
         <header style={{ textAlign: 'center', marginBottom: '20px' }}>
