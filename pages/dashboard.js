@@ -133,6 +133,7 @@ function OwnerDashboard() {
   const [newShopAddress, setNewShopAddress] = useState('');
   const [isAddingShop, setIsAddingShop] = useState(false);
   const [capturingGpsFor, setCapturingGpsFor] = useState(null);
+  const [deliveryForm, setDeliveryForm] = useState(null);
 
   const [selectedShopLedger, setSelectedShopLedger] = useState(null);
   const [shopLedgerHistory, setShopLedgerHistory] = useState([]);
@@ -995,13 +996,45 @@ function OwnerDashboard() {
                         <td style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
                           {order.status === 'approved' && (
-                            <button onClick={() => {
-                              const amt = prompt(`Collect for ${order.bill_number} (₹${order.bill_amount}):`);
-                              if (amt === null) return;
-                              const mode = prompt(`Payment Mode:`, 'Cash');
-                              if (!mode) return;
-                              handleFinalizeDelivery(order.id, parseFloat(order.bill_amount), parseFloat(amt), mode);
-                            }} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>🚚 Log Delivery</button>
+                            deliveryForm?.orderId === order.id ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', minWidth: '180px' }}>
+                                <div style={{ fontSize: '12px', color: '#475569', fontWeight: '600' }}>Log Delivery — {order.bill_number}</div>
+                                <input
+                                  type="number" min="0" step="0.01"
+                                  placeholder={`Amount (max ₹${order.bill_amount})`}
+                                  value={deliveryForm.amount}
+                                  onChange={e => setDeliveryForm({ ...deliveryForm, amount: e.target.value })}
+                                  style={{ padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}
+                                />
+                                <select
+                                  value={deliveryForm.mode}
+                                  onChange={e => setDeliveryForm({ ...deliveryForm, mode: e.target.value })}
+                                  style={{ padding: '6px 8px', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '13px' }}>
+                                  <option value="Cash">💵 Cash</option>
+                                  <option value="UPI">📱 UPI</option>
+                                  <option value="Cheque">🏢 Cheque</option>
+                                </select>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button
+                                    onClick={() => {
+                                      const amt = parseFloat(deliveryForm.amount);
+                                      if (isNaN(amt) || amt < 0) return alert('Enter a valid amount.');
+                                      handleFinalizeDelivery(order.id, parseFloat(order.bill_amount), amt, deliveryForm.mode);
+                                      setDeliveryForm(null);
+                                    }}
+                                    style={{ flex: 1, padding: '6px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                                    ✓ Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => setDeliveryForm(null)}
+                                    style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button onClick={() => setDeliveryForm({ orderId: order.id, amount: order.bill_amount, mode: 'Cash' })} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>🚚 Log Delivery</button>
+                            )
                           )}
                         </td>
                       </tr>
