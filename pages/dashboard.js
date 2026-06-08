@@ -500,7 +500,7 @@ function OwnerDashboard() {
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); }
-    else if (activeTab === 'map') { loadRouteMapLocations(); }
+    else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
     else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
@@ -778,31 +778,40 @@ function OwnerDashboard() {
 
     setIsGeneratingRoute(true);
 
-    // Get all shops that have approved transactions for this agent
-    const { data: agentTx } = await supabase
-      .from('transactions')
-      .select('shop_id')
+    // 1. Try today's beat plan first
+    const todayDow = new Date().getDay();
+    const { data: beatData } = await supabase
+      .from('beat_plans')
+      .select('shops(id, name, phone_number, latitude, longitude)')
       .eq('employee_name', routeAgent)
-      .eq('status', 'approved');
+      .eq('day_of_week', todayDow);
 
-    const shopIds = [...new Set((agentTx || []).map(t => t.shop_id))];
+    let shops = (beatData || [])
+      .map(b => b.shops)
+      .filter(s => s && s.latitude && s.longitude);
 
-    // Get shop details with GPS
-    let shops = [];
-    if (shopIds.length > 0) {
-      const { data: shopData } = await supabase
-        .from('shops')
-        .select('id, name, phone_number, latitude, longitude')
-        .in('id', shopIds)
-        .not('latitude', 'is', null);
-      shops = shopData || [];
+    // 2. Fall back to approved transactions if no beat plan for today
+    if (shops.length === 0) {
+      const { data: agentTx } = await supabase
+        .from('transactions')
+        .select('shop_id')
+        .eq('employee_name', routeAgent)
+        .eq('status', 'approved');
+
+      const shopIds = [...new Set((agentTx || []).map(t => t.shop_id))];
+      if (shopIds.length > 0) {
+        const { data: shopData } = await supabase
+          .from('shops')
+          .select('id, name, phone_number, latitude, longitude')
+          .in('id', shopIds)
+          .not('latitude', 'is', null);
+        shops = shopData || [];
+      }
     }
 
     if (shops.length === 0) {
       setIsGeneratingRoute(false);
-      alert(`No shops with GPS coordinates found for ${routeAgent}. Showing all shops instead.`);
-      const { data: allShops } = await supabase.from('shops').select('id, name, phone_number, latitude, longitude').not('latitude', 'is', null);
-      shops = allShops || [];
+      return alert(`No beat plan or approved orders with GPS found for ${routeAgent}.`);
     }
 
     // Nearest neighbor algorithm
@@ -1319,17 +1328,15 @@ function OwnerDashboard() {
                       <p style={{ textAlign: 'center', color: '#94a3b8', padding: '24px' }}>No shops found.</p>}
                   </div>
                 </div>
-              </div>
 
-            ) : activeTab === 'map_old' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
                 {/* ── AI ROUTE PLANNER ── */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                     <span style={{ fontSize: '24px' }}>🤖</span>
                     <h3 style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>AI Route Optimizer</h3>
                   </div>
-                  <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Select an agent and starting point — AI will calculate the optimal delivery route to minimize travel time.</p>
+                  <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#64748b' }}>Uses today's beat plan shops for the selected agent. Falls back to approved orders if no beat plan is set.</p>
+                  <p style={{ margin: '0 0 20px', fontSize: '12px', color: '#94a3b8' }}>Today: {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()]}</p>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
