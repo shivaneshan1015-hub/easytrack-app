@@ -44,6 +44,9 @@ function AgentPortal() {
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [isLoadingLeaves, setIsLoadingLeaves] = useState(false);
 
+  // Today's Beat Plan
+  const [todaysBeat, setTodaysBeat] = useState([]);
+
   // Returns & Damage
   const [deliveredBills, setDeliveredBills] = useState([]);
   const [returnFormBill, setReturnFormBill] = useState(null);
@@ -88,7 +91,20 @@ function AgentPortal() {
 
   useEffect(() => {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
-  }, [activeTab, profile]);
+    if (activeTab === 'delivery') loadTodaysBeat();
+  }, [activeTab, profile, selectedEmployee]);
+
+  async function loadTodaysBeat() {
+    const dayOfWeek = new Date().getDay();
+    const agentName = profile?.full_name || selectedEmployee;
+    if (!agentName) return;
+    const { data } = await supabase
+      .from('beat_plans')
+      .select('id, shops(id, name, address, phone_number, latitude, longitude)')
+      .eq('day_of_week', dayOfWeek)
+      .eq('employee_name', agentName);
+    if (data) setTodaysBeat(data.map(b => b.shops).filter(Boolean));
+  }
 
   useEffect(() => {
     if (!shopSearchText.trim()) { setShopSearchResults([]); return; }
@@ -593,6 +609,31 @@ function AgentPortal() {
         ) : activeTab === 'delivery' ? (
           /* ── PHASE 2: DELIVER & COLLECT ── */
           <div>
+
+            {/* ── TODAY'S BEAT ── */}
+            {todaysBeat.length > 0 && (
+              <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px' }}>
+                <p style={{ margin: '0 0 10px', fontWeight: 'bold', fontSize: '14px', color: '#15803d' }}>
+                  📅 Today's Beat — {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date().getDay()]} ({todaysBeat.length} shop{todaysBeat.length > 1 ? 's' : ''})
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {todaysBeat.map(shop => (
+                    <div key={shop.id} style={{ backgroundColor: '#ffffff', borderRadius: '8px', padding: '10px 14px', border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <p style={{ margin: '0 0 2px', fontWeight: '600', fontSize: '14px', color: '#0f172a' }}>{shop.name}</p>
+                        {shop.address && <p style={{ margin: '0 0 2px', fontSize: '12px', color: '#64748b' }}>{shop.address}</p>}
+                        {shop.phone_number && <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>📞 {shop.phone_number}</p>}
+                      </div>
+                      {shop.latitude && shop.longitude
+                        ? <a href={`https://www.google.com/maps?q=${shop.latitude},${shop.longitude}`} target="_blank" rel="noopener noreferrer"
+                            style={{ padding: '6px 12px', backgroundColor: '#16a34a', color: '#ffffff', textDecoration: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', flexShrink: 0, marginLeft: '10px' }}>📍 Maps</a>
+                        : <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: '10px' }}>No GPS</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Search Shop Name</label>
               <div style={{ position: 'relative' }}>

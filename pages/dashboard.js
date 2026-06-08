@@ -130,6 +130,7 @@ function OwnerDashboard() {
   const [shopsList, setShopsList] = useState([]);
   const [newShopName, setNewShopName] = useState('');
   const [newShopPhone, setNewShopPhone] = useState('');
+  const [newShopAddress, setNewShopAddress] = useState('');
   const [isAddingShop, setIsAddingShop] = useState(false);
 
   const [selectedShopLedger, setSelectedShopLedger] = useState(null);
@@ -151,6 +152,12 @@ function OwnerDashboard() {
   const [chartType, setChartType] = useState('bar');
   const [returnsList, setReturnsList] = useState([]);
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
+  const [shopDirSearch, setShopDirSearch] = useState('');
+  const [beatPlan, setBeatPlan] = useState([]);
+  const [beatNewDay, setBeatNewDay] = useState('1');
+  const [beatNewShop, setBeatNewShop] = useState('');
+  const [beatNewAgent, setBeatNewAgent] = useState('');
+  const [isAddingBeat, setIsAddingBeat] = useState(false);
 
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedAgentForOrder, setSelectedAgentForOrder] = useState('');
@@ -306,7 +313,7 @@ function OwnerDashboard() {
 
   async function loadRouteMapLocations() {
     setIsLoading(true);
-    const { data } = await supabase.from('shops').select('id, name, phone_number, latitude, longitude').order('name', { ascending: true });
+    const { data } = await supabase.from('shops').select('id, name, phone_number, address, latitude, longitude').order('name', { ascending: true });
     if (data) setRegisteredShops(data);
     setIsLoading(false);
   }
@@ -437,6 +444,14 @@ function OwnerDashboard() {
     setIsLoading(false);
   }
 
+  async function loadBeatPlan() {
+    const { data } = await supabase
+      .from('beat_plans')
+      .select('id, day_of_week, employee_name, shop_id, shops(name)')
+      .order('day_of_week', { ascending: true });
+    if (data) setBeatPlan(data);
+  }
+
   async function loadInvoiceSettings() {
     setIsLoading(true);
     const { data } = await supabase.from('invoice_settings')
@@ -485,9 +500,9 @@ function OwnerDashboard() {
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); }
-    else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
+    else if (activeTab === 'map') { loadRouteMapLocations(); }
     else if (activeTab === 'shops') loadShops();
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -860,7 +875,7 @@ function OwnerDashboard() {
           <div onClick={() => setActiveTab('pending')} style={tabStyle('pending')}>⏳ Pending Orders</div>
           <div onClick={() => setActiveTab('history')} style={tabStyle('history')}>📜 Dispatched Ledger</div>
           <div onClick={() => setActiveTab('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
-          <div onClick={() => setActiveTab('map')} style={tabStyle('map')}>🗺️ Route Map</div>
+          <div onClick={() => setActiveTab('map')} style={tabStyle('map')}>🏪 Shop Directory</div>
           <div onClick={() => setActiveTab('shops')} style={tabStyle('shops')}>🏪 Shop Management</div>
           <div onClick={() => setActiveTab('invoice')} style={tabStyle('invoice')}>🧾 Invoice Settings</div>
           <div onClick={() => setActiveTab('admin')} style={tabStyle('admin')}>👥 Management Panel</div>
@@ -879,7 +894,7 @@ function OwnerDashboard() {
             {activeTab === 'pending' && 'Pending Orders'}
             {activeTab === 'history' && 'Dispatched Ledger'}
             {activeTab === 'finance' && 'Financial Insights'}
-            {activeTab === 'map' && 'Route Map'}
+            {activeTab === 'map' && 'Shop Directory'}
             {activeTab === 'shops' && 'Shop Management'}
             {activeTab === 'invoice' && 'Invoice Settings'}
             {activeTab === 'admin' && 'Management Panel'}
@@ -1269,8 +1284,45 @@ function OwnerDashboard() {
               </div>
 
             ) : activeTab === 'map' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>🏪 All Shops ({registeredShops.length})</h3>
+                    <input type="text" placeholder="Search by name..." value={shopDirSearch} onChange={e => setShopDirSearch(e.target.value)}
+                      style={{ padding: '8px 14px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', width: '220px' }} />
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '14px' }}>
+                      <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Shop Name</th>
+                        <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Phone</th>
+                        <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Address</th>
+                        <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Google Maps</th>
+                      </tr></thead>
+                      <tbody>
+                        {registeredShops.filter(s => s.name.toLowerCase().includes(shopDirSearch.toLowerCase())).map(shop => (
+                          <tr key={shop.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '12px 14px', fontWeight: '500' }}>{shop.name}</td>
+                            <td style={{ padding: '12px 14px', color: '#64748b' }}>{shop.phone_number || '—'}</td>
+                            <td style={{ padding: '12px 14px', color: '#64748b' }}>{shop.address || '—'}</td>
+                            <td style={{ padding: '12px 14px' }}>
+                              {shop.latitude && shop.longitude
+                                ? <a href={`https://www.google.com/maps?q=${shop.latitude},${shop.longitude}`} target="_blank" rel="noopener noreferrer"
+                                    style={{ color: '#2563eb', textDecoration: 'none', fontWeight: '500', fontSize: '13px' }}>📍 Open Maps</a>
+                                : <span style={{ color: '#94a3b8', fontSize: '13px' }}>No GPS set</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {registeredShops.filter(s => s.name.toLowerCase().includes(shopDirSearch.toLowerCase())).length === 0 &&
+                      <p style={{ textAlign: 'center', color: '#94a3b8', padding: '24px' }}>No shops found.</p>}
+                  </div>
+                </div>
+              </div>
 
+            ) : activeTab === 'map_old' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
                 {/* ── AI ROUTE PLANNER ── */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
@@ -1421,15 +1473,20 @@ function OwnerDashboard() {
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Phone</label>
                       <input type="tel" placeholder="9876543210" value={newShopPhone} onChange={(e) => setNewShopPhone(e.target.value)}
-                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: '200px' }} />
+                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: '180px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Address</label>
+                      <input type="text" placeholder="Street, Area, City" value={newShopAddress} onChange={(e) => setNewShopAddress(e.target.value)}
+                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: '260px' }} />
                     </div>
                     <button onClick={async () => {
                       if (!newShopName.trim()) return alert('Enter shop name.');
                       setIsAddingShop(true);
-                      const { error } = await supabase.from('shops').insert([{ name: newShopName.trim(), phone_number: newShopPhone.trim() }]);
+                      const { error } = await supabase.from('shops').insert([{ name: newShopName.trim(), phone_number: newShopPhone.trim(), address: newShopAddress.trim() || null }]);
                       setIsAddingShop(false);
                       if (error) alert('Failed: ' + error.message);
-                      else { alert(`✅ "${newShopName}" added!`); setNewShopName(''); setNewShopPhone(''); loadShops(); }
+                      else { alert(`✅ "${newShopName}" added!`); setNewShopName(''); setNewShopPhone(''); setNewShopAddress(''); loadShops(); }
                     }} disabled={isAddingShop}
                       style={{ padding: '10px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>
                       {isAddingShop ? 'Adding...' : '➕ Add Shop'}
@@ -1444,6 +1501,7 @@ function OwnerDashboard() {
                     <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Phone</th>
+                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Address</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>GPS</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Credit Limit (₹)</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px', minWidth: '160px' }}>Credit Usage</th>
@@ -1458,7 +1516,11 @@ function OwnerDashboard() {
                         </td>
                         <td style={{ padding: '14px 16px' }}>
                           <input type="tel" value={shop.phone_number || ''} onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, phone_number: e.target.value } : s))}
-                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '14px', width: '140px' }} />
+                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '14px', width: '130px' }} />
+                        </td>
+                        <td style={{ padding: '14px 16px' }}>
+                          <input type="text" value={shop.address || ''} placeholder="Street, Area, City" onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, address: e.target.value } : s))}
+                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '200px' }} />
                         </td>
                         <td style={{ padding: '14px 16px', fontSize: '13px', color: shop.latitude ? '#16a34a' : '#94a3b8' }}>
                           {shop.latitude ? `${parseFloat(shop.latitude).toFixed(4)}, ${parseFloat(shop.longitude).toFixed(4)}` : 'Not set'}
@@ -1496,7 +1558,7 @@ function OwnerDashboard() {
                         <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(shop.created_at).toLocaleDateString('en-IN')}</td>
                         <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
                           <button onClick={async () => {
-                            const updatePayload = { name: shop.name, phone_number: shop.phone_number, credit_limit: shop.credit_limit ?? 0 };
+                            const updatePayload = { name: shop.name, phone_number: shop.phone_number, address: shop.address || null, credit_limit: shop.credit_limit ?? 0 };
                             console.log('[shops] saving shop', shop.id, 'payload:', updatePayload);
                             const { error: saveError } = await supabase.from('shops').update(updatePayload).eq('id', shop.id);
                             console.log('[shops] save error:', saveError);
@@ -1838,7 +1900,86 @@ function OwnerDashboard() {
                   </form>
                 </div>
 
-                {/* 4. Product Catalog */}
+                {/* 4. Daily Beat Plan */}
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>📅 Daily Beat Plan</h3>
+                  <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Assign which shops each agent visits on which day of the week.</p>
+
+                  {/* Add assignment */}
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '24px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Day</label>
+                      <select value={beatNewDay} onChange={e => setBeatNewDay(e.target.value)}
+                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff' }}>
+                        {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d,i) => (
+                          <option key={i} value={String(i)}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Shop</label>
+                      <select value={beatNewShop} onChange={e => setBeatNewShop(e.target.value)}
+                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff', minWidth: '180px' }}>
+                        <option value="">-- Select Shop --</option>
+                        {shopsList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Agent</label>
+                      <select value={beatNewAgent} onChange={e => setBeatNewAgent(e.target.value)}
+                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff', minWidth: '160px' }}>
+                        <option value="">-- Select Agent --</option>
+                        {activeAgents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                      </select>
+                    </div>
+                    <button disabled={isAddingBeat || !beatNewShop || !beatNewAgent} onClick={async () => {
+                      setIsAddingBeat(true);
+                      const { error } = await supabase.from('beat_plans').upsert([{
+                        shop_id: beatNewShop,
+                        employee_name: beatNewAgent,
+                        day_of_week: parseInt(beatNewDay),
+                      }], { onConflict: 'shop_id,day_of_week' });
+                      setIsAddingBeat(false);
+                      if (error) alert('Failed: ' + error.message);
+                      else { setBeatNewShop(''); setBeatNewAgent(''); loadBeatPlan(); }
+                    }} style={{ padding: '9px 20px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '40px' }}>
+                      {isAddingBeat ? 'Saving...' : '➕ Assign'}
+                    </button>
+                  </div>
+
+                  {/* Beat plan table grouped by day */}
+                  {beatPlan.length === 0 ? (
+                    <p style={{ color: '#94a3b8', fontSize: '13px' }}>No assignments yet.</p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Day</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Shop</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Action</th>
+                        </tr></thead>
+                        <tbody>{beatPlan.map(bp => (
+                          <tr key={bp.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '10px 14px', fontWeight: '600', color: '#334155' }}>
+                              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][bp.day_of_week]}
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>{bp.shops?.name || '—'}</td>
+                            <td style={{ padding: '10px 14px', color: '#475569' }}>{bp.employee_name}</td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <button onClick={async () => {
+                                await supabase.from('beat_plans').delete().eq('id', bp.id);
+                                loadBeatPlan();
+                              }} style={{ padding: '4px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
+                            </td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Product Catalog */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>Product Catalog</h3>
                   <div style={{ overflowX: 'auto' }}>
