@@ -918,7 +918,7 @@ function OwnerDashboard() {
       </aside>
 
       {/* Main */}
-      <main style={{ flexGrow: 1, padding: isMobile ? '16px' : '40px', boxSizing: 'border-box', minWidth: 0 }} className="no-print">
+      <main style={{ flexGrow: 1, padding: isMobile ? '16px 16px 74px' : '40px', boxSizing: 'border-box', minWidth: 0 }} className="no-print">
         <header style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '12px' }}>
           {isMobile && (
             <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px 6px', color: '#1e293b', flexShrink: 0, lineHeight: 1 }}>☰</button>
@@ -1010,10 +1010,20 @@ function OwnerDashboard() {
                           <span style={{ display: 'block', fontWeight: '500' }}>{order.shops?.name}</span>
                           <button onClick={() => loadShopStatement(order.shops?.id, order.shops?.name)} style={{ background: 'none', border: 'none', color: '#2563eb', padding: '0', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}>📊 Statement</button>
                         </td>
-                        <td style={{ padding: '16px', fontWeight: '600' }}>₹{order.bill_amount}</td>
-                        <td style={{ padding: '16px', color: '#16a34a', fontWeight: '600' }}>₹{order.amount_received}</td>
-                        <td style={{ padding: '16px' }}><span style={{ backgroundColor: '#f1f5f9', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>💳 {order.payment_mode || 'Cash'}</span></td>
-                        <td style={{ padding: '16px', color: order.pending_amount > 0 ? '#dc2626' : '#475569', fontWeight: '600' }}>₹{order.pending_amount}</td>
+                        <td style={{ padding: '16px', fontWeight: '600' }}>₹{parseFloat(order.bill_amount || 0).toLocaleString('en-IN')}</td>
+                        <td style={{ padding: '16px', color: '#16a34a', fontWeight: '600' }}>
+                          {order.status === 'approved' ? <span style={{ color: '#94a3b8' }}>—</span> : `₹${parseFloat(order.amount_received || 0).toLocaleString('en-IN')}`}
+                        </td>
+                        <td style={{ padding: '16px' }}>
+                          <span style={{ backgroundColor: '#f1f5f9', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>
+                            {order.status === 'approved' ? '⏳ En Route' : `💳 ${order.payment_mode || 'Cash'}`}
+                          </span>
+                        </td>
+                        <td style={{ padding: '16px', fontWeight: '600', color: '#dc2626' }}>
+                          {order.status === 'approved'
+                            ? `₹${parseFloat(order.bill_amount || 0).toLocaleString('en-IN')}`
+                            : `₹${parseFloat(order.pending_amount || 0).toLocaleString('en-IN')}`}
+                        </td>
                         <td style={{ padding: '16px' }}><span style={{ padding: '4px 12px', borderRadius: '50px', fontSize: '12px', fontWeight: 'bold', backgroundColor: bgStyle, color: textStyle }}>{badgeLabel}</span></td>
                         <td style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
@@ -2402,6 +2412,26 @@ function OwnerDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mobile bottom nav */}
+      {isMobile && (
+        <nav className="no-print" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#0f172a', borderTop: '1px solid #1e293b', display: 'flex', zIndex: 45, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          {[
+            { tab: 'pending',  icon: '⏳', label: 'Orders'    },
+            { tab: 'history',  icon: '📜', label: 'Ledger'    },
+            { tab: 'finance',  icon: '📈', label: 'Finance'   },
+            { tab: 'map',      icon: '🗺️', label: 'Directory' },
+            { tab: 'shops',    icon: '🏪', label: 'Shops'     },
+            { tab: 'invoice',  icon: '🧾', label: 'Invoice'   },
+            { tab: 'admin',    icon: '👥', label: 'Admin'     },
+          ].map(({ tab, icon, label }) => (
+            <button key={tab} onClick={() => handleNavClick(tab)} style={{ flex: 1, padding: '8px 2px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', color: activeTab === tab ? '#38bdf8' : '#64748b', borderTop: `2px solid ${activeTab === tab ? '#38bdf8' : 'transparent'}`, transition: 'color 0.15s' }}>
+              <span style={{ fontSize: '17px', lineHeight: 1 }}>{icon}</span>
+              <span style={{ fontSize: '9px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{label}</span>
+            </button>
+          ))}
+        </nav>
       )}
 
       <style jsx global>{`

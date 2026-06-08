@@ -497,7 +497,7 @@ function AgentPortal() {
   });
 
   return (
-    <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', padding: '20px', color: '#0f172a' }}>
+    <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', padding: '20px 20px 74px', color: '#0f172a' }}>
       <div style={{ fontFamily: 'sans-serif', maxWidth: '500px', margin: '0 auto' }}>
 
         <header style={{ textAlign: 'center', marginBottom: '20px' }}>
@@ -873,6 +873,20 @@ function AgentPortal() {
           </div>
         )}
       </div>
+
+      {/* Mobile bottom nav */}
+      <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '2px solid #f1f5f9', display: 'flex', zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        {[
+          { tab: 'booking',  icon: '📝', label: 'Book Order' },
+          { tab: 'delivery', icon: '📦', label: 'Deliver'    },
+          { tab: 'leave',    icon: '🏖️', label: 'Leave'      },
+        ].map(({ tab, icon, label }) => (
+          <button key={tab} type="button" onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', color: activeTab === tab ? '#2563eb' : '#94a3b8', borderTop: `2px solid ${activeTab === tab ? '#2563eb' : 'transparent'}`, marginTop: '-2px' }}>
+            <span style={{ fontSize: '20px', lineHeight: 1 }}>{icon}</span>
+            <span style={{ fontSize: '10px', fontWeight: 'bold' }}>{label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
