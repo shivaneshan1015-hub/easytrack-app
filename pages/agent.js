@@ -445,20 +445,16 @@ function AgentPortal() {
         .select('credit_limit, name')
         .eq('id', targetShopId)
         .single();
-      console.log('[credit] shop row:', shopCredit, '| fetchErr:', creditFetchErr);
       if (creditFetchErr) throw new Error('Could not verify credit limit: ' + creditFetchErr.message);
       const creditLimit = parseFloat(shopCredit?.credit_limit ?? 0);
-      console.log('[credit] creditLimit parsed:', creditLimit);
       if (creditLimit > 0) {
         const { data: openTx, error: txFetchErr } = await supabase
           .from('transactions')
           .select('bill_amount')
           .eq('shop_id', targetShopId)
           .neq('status', 'delivered');
-        console.log('[credit] open transactions:', openTx, '| txFetchErr:', txFetchErr);
         const creditUsed = (openTx || []).reduce((s, tx) => s + parseFloat(tx.bill_amount || 0), 0);
         const available = Math.max(0, creditLimit - creditUsed);
-        console.log('[credit] used:', creditUsed, '| new order:', cumulativeBillSum, '| available:', available);
         if (creditUsed + cumulativeBillSum > creditLimit) {
           const msg = `❌ Credit limit exceeded for ${shopCredit.name}.\n\nLimit: ₹${creditLimit.toLocaleString('en-IN')}\nAlready used: ₹${creditUsed.toLocaleString('en-IN')}\nThis order: ₹${cumulativeBillSum.toLocaleString('en-IN')}\nAvailable: ₹${available.toLocaleString('en-IN')}`;
           alert(msg);

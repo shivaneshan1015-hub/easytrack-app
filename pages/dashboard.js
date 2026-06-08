@@ -1566,16 +1566,11 @@ function OwnerDashboard() {
                         <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
                           <button onClick={async () => {
                             const updatePayload = { name: shop.name, phone_number: shop.phone_number, address: shop.address || null, credit_limit: shop.credit_limit ?? 0 };
-                            console.log('[shops] saving shop', shop.id, 'payload:', updatePayload);
                             const { error: saveError } = await supabase.from('shops').update(updatePayload).eq('id', shop.id);
-                            console.log('[shops] save error:', saveError);
                             if (saveError) {
                               alert('Save failed: ' + saveError.message);
                             } else {
-                              // Verify what's actually stored
-                              const { data: verify } = await supabase.from('shops').select('credit_limit').eq('id', shop.id).single();
-                              console.log('[shops] verified credit_limit in DB after save:', verify?.credit_limit);
-                              alert(`✅ Saved! credit_limit in DB: ${verify?.credit_limit}`);
+                              alert('✅ Saved!');
                             }
                           }} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
                           <button onClick={async () => {
