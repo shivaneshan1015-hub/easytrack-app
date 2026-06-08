@@ -181,6 +181,20 @@ function OwnerDashboard() {
   const [isUploadingLetterhead, setIsUploadingLetterhead] = useState(false);
   const [letterheadUrl, setLetterheadUrl] = useState('');
   const [toasts, setToasts] = useState([]);
+  const [isMobile, setIsMobile] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  const handleNavClick = (tab) => {
+    setActiveTab(tab);
+    if (isMobile) setSidebarOpen(false);
+  };
 
   const addToast = (message) => {
     const id = Date.now();
@@ -863,10 +877,15 @@ function OwnerDashboard() {
   });
 
   return (
-    <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', display: 'flex', color: '#0f172a', fontFamily: 'sans-serif' }}>
+    <div style={{ backgroundColor: '#f8fafc', minHeight: '100vh', display: 'flex', color: '#0f172a', fontFamily: 'sans-serif', position: 'relative' }}>
+
+      {/* Mobile backdrop */}
+      {isMobile && sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 40 }} />
+      )}
 
       {/* Sidebar */}
-      <aside style={{ width: '260px', backgroundColor: '#0f172a', padding: '25px', color: '#ffffff', display: 'flex', flexDirection: 'column' }} className="no-print">
+      <aside style={{ width: '260px', backgroundColor: '#0f172a', padding: '25px', color: '#ffffff', display: 'flex', flexDirection: 'column', flexShrink: 0, ...(isMobile ? { position: 'fixed', top: 0, left: sidebarOpen ? 0 : '-280px', height: '100vh', zIndex: 50, transition: 'left 0.25s ease', overflowY: 'auto' } : {}) }} className="no-print">
         <h2 style={{ margin: '0 0 5px', fontSize: '22px', fontWeight: 'bold' }}>EasyTrack</h2>
         <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '20px' }}>HQ Control Room</span>
         {leaveNotifications.length > 0 && (
@@ -883,13 +902,13 @@ function OwnerDashboard() {
           </div>
         )}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
-          <div onClick={() => setActiveTab('pending')} style={tabStyle('pending')}>⏳ Pending Orders</div>
-          <div onClick={() => setActiveTab('history')} style={tabStyle('history')}>📜 Dispatched Ledger</div>
-          <div onClick={() => setActiveTab('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
-          <div onClick={() => setActiveTab('map')} style={tabStyle('map')}>🏪 Shop Directory</div>
-          <div onClick={() => setActiveTab('shops')} style={tabStyle('shops')}>🏪 Shop Management</div>
-          <div onClick={() => setActiveTab('invoice')} style={tabStyle('invoice')}>🧾 Invoice Settings</div>
-          <div onClick={() => setActiveTab('admin')} style={tabStyle('admin')}>👥 Management Panel</div>
+          <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>⏳ Pending Orders</div>
+          <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatched Ledger</div>
+          <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
+          <div onClick={() => handleNavClick('map')} style={tabStyle('map')}>🗺️ Shop Directory</div>
+          <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shop Management</div>
+          <div onClick={() => handleNavClick('invoice')} style={tabStyle('invoice')}>🧾 Invoice Settings</div>
+          <div onClick={() => handleNavClick('admin')} style={tabStyle('admin')}>👥 Management Panel</div>
         </nav>
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: '20px', marginTop: '20px' }}>
           <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 'bold', color: '#f8fafc' }}>{profile?.full_name || 'Owner'}</p>
@@ -899,9 +918,12 @@ function OwnerDashboard() {
       </aside>
 
       {/* Main */}
-      <main style={{ flexGrow: 1, padding: '40px', boxSizing: 'border-box' }} className="no-print">
-        <header style={{ marginBottom: '35px' }}>
-          <h1 style={{ margin: '0', fontSize: '28px', fontWeight: 'bold', color: '#1e293b' }}>
+      <main style={{ flexGrow: 1, padding: isMobile ? '16px' : '40px', boxSizing: 'border-box', minWidth: 0 }} className="no-print">
+        <header style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {isMobile && (
+            <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px 6px', color: '#1e293b', flexShrink: 0, lineHeight: 1 }}>☰</button>
+          )}
+          <h1 style={{ margin: '0', fontSize: isMobile ? '20px' : '28px', fontWeight: 'bold', color: '#1e293b' }}>
             {activeTab === 'pending' && 'Pending Orders'}
             {activeTab === 'history' && 'Dispatched Ledger'}
             {activeTab === 'finance' && 'Financial Insights'}
@@ -938,8 +960,8 @@ function OwnerDashboard() {
                   <p style={{ margin: '0', color: '#64748b' }}>No pending orders.</p>
                 </div>
               ) : (
-                <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '480px', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '16px', color: '#475569' }}>Bill Number</th>
                       <th style={{ padding: '16px', color: '#475569' }}>Shop</th>
@@ -963,8 +985,8 @@ function OwnerDashboard() {
               )
 
             ) : activeTab === 'history' ? (
-              <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                     <th style={{ padding: '16px', color: '#475569' }}>Bill No</th>
                     <th style={{ padding: '16px', color: '#475569' }}>Shop</th>
@@ -1147,7 +1169,8 @@ function OwnerDashboard() {
                     </select>
                   </div>
                   {financials.shopPendingBills && financials.shopPendingBills.length > 0 ? (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: '500px', borderCollapse: 'collapse', fontSize: '13px' }}>
                       <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                         <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Bill Number</th>
                         <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Shop</th>
@@ -1182,6 +1205,7 @@ function OwnerDashboard() {
                         </tr>
                       </tfoot>
                     </table>
+                    </div>
                   ) : (
                     <p style={{ color: '#16a34a', fontSize: '13px', textAlign: 'center', padding: '20px' }}>✅ No pending bills!</p>
                   )}
@@ -1233,7 +1257,8 @@ function OwnerDashboard() {
                 {/* ── AGENT DETAILED REPORT ── */}
                 <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <h3 style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 'bold' }}>👥 Agent Detailed Report</h3>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
                       <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Bills</th>
@@ -1257,6 +1282,7 @@ function OwnerDashboard() {
                       </tr>
                     ))}</tbody>
                   </table>
+                  </div>
                 </div>
 
                 {/* ── RETURNS & DAMAGES ── */}
@@ -1534,11 +1560,12 @@ function OwnerDashboard() {
                     </button>
                   </div>
                 </div>
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                   <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
                     <h3 style={{ margin: 0, fontSize: '16px' }}>All Shops ({shopsList.length})</h3>
                   </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
                     <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
                       <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Phone</th>
@@ -1637,6 +1664,7 @@ function OwnerDashboard() {
                       </tr>
                     ))}</tbody>
                   </table>
+                  </div>
                   {shopsList.length === 0 && <p style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No shops yet.</p>}
                 </div>
               </div>
@@ -1888,7 +1916,8 @@ function OwnerDashboard() {
                   {agentsList.length === 0 ? (
                     <p style={{ color: '#64748b', fontSize: '14px' }}>No agents found.</p>
                   ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', textAlign: 'left' }}>
                       <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                         <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
                         <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Email</th>
@@ -1919,6 +1948,7 @@ function OwnerDashboard() {
                         </tr>
                       ))}</tbody>
                     </table>
+                    </div>
                   )}
                 </div>
 

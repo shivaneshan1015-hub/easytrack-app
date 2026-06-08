@@ -489,10 +489,11 @@ function AgentPortal() {
   const todayStr = new Date().toISOString().split('T')[0];
 
   const tabStyle = (tab) => ({
-    flex: 1, padding: '10px', border: 'none', borderRadius: '6px',
-    fontWeight: 'bold', fontSize: '13px', cursor: 'pointer',
+    flex: 1, padding: '10px 6px', border: 'none', borderRadius: '6px',
+    fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
     backgroundColor: activeTab === tab ? '#ffffff' : 'transparent',
-    color: activeTab === tab ? '#2563eb' : '#475569'
+    color: activeTab === tab ? '#2563eb' : '#475569',
+    lineHeight: '1.3', textAlign: 'center'
   });
 
   return (
