@@ -20,7 +20,7 @@ export default async function handler(req, res) {
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to: testEmail,
       subject: 'EasyTrack — SMTP Test',
-      html: { content: testHtml, encoding: 'base64' },
+      html: testHtml,
     });
     return res.status(200).json({ success: true });
   } catch (err) {

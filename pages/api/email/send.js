@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       from: `"${fromName}" <${fromEmail}>`,
       to: recipientEmail,
       subject: `Invoice ${transaction.bill_number} — ${transaction.shops?.name || 'Your Store'}`,
-      html: { content: html, encoding: 'base64' },
+      html,
     });
 
     return res.status(200).json({ success: true });
