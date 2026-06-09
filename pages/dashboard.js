@@ -189,6 +189,8 @@ function OwnerDashboard() {
   const [smtpTestEmail, setSmtpTestEmail] = useState('');
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState('');
+  const [restockModal, setRestockModal] = useState(null);
+  const [restockQty, setRestockQty] = useState('');
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -710,6 +712,19 @@ function OwnerDashboard() {
     }
   };
 
+  const handleRestock = async () => {
+    if (!restockModal) return;
+    const qty = parseInt(restockQty);
+    if (isNaN(qty) || qty <= 0) return alert('Enter a valid quantity.');
+    const newStock = restockModal.currentStock + qty;
+    const { error } = await supabase.from('products').update({ inventory_stock: newStock }).eq('id', restockModal.id);
+    if (error) return alert('Restock failed: ' + error.message);
+    addToast(`✅ ${restockModal.name} restocked — new stock: ${newStock} units`);
+    setRestockModal(null);
+    setRestockQty('');
+    loadMasterProducts();
+  };
+
   const handleFinalizeDelivery = async (transactionId, totalBill, amountReceived, paymentMode) => {
     if (isNaN(amountReceived) || amountReceived < 0) return alert('Invalid amount.');
     setIsUpdating(true);
@@ -972,10 +987,33 @@ function OwnerDashboard() {
             p.inventory_stock <= (p.low_stock_threshold || 10)
           );
           if (lowStock.length === 0) return null;
-          const names = lowStock.map(p => `${p.name} (${p.inventory_stock} units)`).join(', ');
           return (
-            <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 18px', marginBottom: '24px', fontSize: '14px', color: '#92400e', fontWeight: '500' }}>
-              ⚠️ {lowStock.length} product{lowStock.length > 1 ? 's' : ''} low: {names}
+            <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '16px 20px', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '16px' }}>⚠️</span>
+                <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#92400e' }}>
+                  {lowStock.length} product{lowStock.length > 1 ? 's' : ''} need restocking
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {lowStock.map(p => {
+                  const threshold = p.low_stock_threshold || 10;
+                  return (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '6px', padding: '10px 14px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <span style={{ fontWeight: '600', fontSize: '14px', color: '#0f172a' }}>{p.name}</span>
+                        <span style={{ marginLeft: '10px', fontSize: '13px', color: '#dc2626', fontWeight: 'bold' }}>{p.inventory_stock} units left</span>
+                        <span style={{ marginLeft: '6px', fontSize: '12px', color: '#92400e' }}>(min: {threshold})</span>
+                      </div>
+                      <button
+                        onClick={() => { setRestockModal({ id: p.id, name: p.name, currentStock: p.inventory_stock }); setRestockQty(''); }}
+                        style={{ padding: '6px 14px', backgroundColor: '#f59e0b', color: '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        + Restock
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           );
         })()}
@@ -1946,22 +1984,6 @@ function OwnerDashboard() {
               /* Management Panel */
               <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
 
-                {/* Low Stock Banner */}
-                {(() => {
-                  const lowStock = productsCatalog.filter(p =>
-                    p.is_active !== false &&
-                    (p.low_stock_threshold || 10) > 0 &&
-                    p.inventory_stock <= (p.low_stock_threshold || 10)
-                  );
-                  if (lowStock.length === 0) return null;
-                  const names = lowStock.map(p => `${p.name} (${p.inventory_stock} units)`).join(', ');
-                  return (
-                    <div style={{ backgroundColor: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', padding: '12px 18px', fontSize: '14px', color: '#92400e', fontWeight: '500' }}>
-                      ⚠️ Low Stock: {names}
-                    </div>
-                  );
-                })()}
-
                 {/* 1. Invite New Agent */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Invite New Agent</h3>
@@ -2315,6 +2337,51 @@ function OwnerDashboard() {
                   <button onClick={handleSendInvoiceEmail} disabled={isSendingEmail || !emailRecipient.trim()}
                     style={{ flex: 2, padding: '12px', backgroundColor: isSendingEmail ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: isSendingEmail ? 'not-allowed' : 'pointer' }}>
                     {isSendingEmail ? 'Sending...' : '📧 Send Invoice'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Restock Modal */}
+          {restockModal && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '380px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                  <div>
+                    <h3 style={{ margin: '0 0 4px', fontSize: '18px', color: '#0f172a' }}>Restock Product</h3>
+                    <p style={{ margin: '0', fontSize: '13px', color: '#64748b' }}>{restockModal.name}</p>
+                  </div>
+                  <button onClick={() => setRestockModal(null)} style={{ background: 'none', border: 'none', fontSize: '20px', color: '#94a3b8', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                </div>
+                <div style={{ backgroundColor: '#f8fafc', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '13px', color: '#64748b' }}>Current stock</span>
+                  <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#dc2626' }}>{restockModal.currentStock} units</span>
+                </div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#374151', marginBottom: '8px' }}>Units to add</label>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="e.g. 50"
+                  value={restockQty}
+                  onChange={(e) => setRestockQty(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRestock()}
+                  autoFocus
+                  style={{ width: '100%', padding: '12px', border: '2px solid #cbd5e1', borderRadius: '8px', fontSize: '16px', boxSizing: 'border-box', marginBottom: '16px' }}
+                />
+                {restockQty && parseInt(restockQty) > 0 && (
+                  <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#16a34a', fontWeight: '500' }}>
+                    New stock will be: {restockModal.currentStock + parseInt(restockQty)} units
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={() => setRestockModal(null)}
+                    style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button onClick={handleRestock} disabled={!restockQty || parseInt(restockQty) <= 0}
+                    style={{ flex: 2, padding: '12px', backgroundColor: !restockQty || parseInt(restockQty) <= 0 ? '#94a3b8' : '#f59e0b', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: !restockQty || parseInt(restockQty) <= 0 ? 'not-allowed' : 'pointer' }}>
+                    ✓ Add Stock
                   </button>
                 </div>
               </div>
