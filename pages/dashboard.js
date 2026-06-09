@@ -183,6 +183,12 @@ function OwnerDashboard() {
   const [toasts, setToasts] = useState([]);
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [emailModal, setEmailModal] = useState(null);
+  const [emailRecipient, setEmailRecipient] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [smtpTestEmail, setSmtpTestEmail] = useState('');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [smtpTestResult, setSmtpTestResult] = useState('');
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -683,6 +689,27 @@ function OwnerDashboard() {
     } catch (err) { alert('Error.'); } finally { setIsUpdating(false); }
   };
 
+  const handleSendInvoiceEmail = async () => {
+    if (!emailRecipient.trim()) return alert('Enter a recipient email address.');
+    setIsSendingEmail(true);
+    try {
+      const res = await fetch('/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId: emailModal.orderId, recipientEmail: emailRecipient.trim(), ownerId: profile?.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      addToast(`✅ Invoice emailed to ${emailRecipient}`);
+      setEmailModal(null);
+      setEmailRecipient('');
+    } catch (err) {
+      alert('Failed to send: ' + err.message);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   const handleFinalizeDelivery = async (transactionId, totalBill, amountReceived, paymentMode) => {
     if (isNaN(amountReceived) || amountReceived < 0) return alert('Invalid amount.');
     setIsUpdating(true);
@@ -1031,6 +1058,7 @@ function OwnerDashboard() {
                         <td style={{ padding: '16px' }}><span style={{ padding: '4px 12px', borderRadius: '50px', fontSize: '12px', fontWeight: 'bold', backgroundColor: bgStyle, color: textStyle }}>{badgeLabel}</span></td>
                         <td style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
+                          <button onClick={() => { setEmailModal({ orderId: order.id, billNumber: order.bill_number, shopName: order.shops?.name }); setEmailRecipient(''); }} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📧 Email</button>
                           {order.status === 'approved' && (
                             deliveryForm?.orderId === order.id ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', minWidth: '180px' }}>
@@ -1808,6 +1836,55 @@ function OwnerDashboard() {
                   )}
                 </div>
 
+                {/* SMTP / Email */}
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>📧 Email Settings</h3>
+                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>
+                    To enable emailing invoices, set <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_HOST</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_USER</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_PASS</code>, and <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_FROM</code> in your <strong>.env.local</strong> file and restart the server. Gmail works out of the box with an App Password.
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: '240px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Send a test email to</label>
+                      <input
+                        type="email"
+                        placeholder="you@example.com"
+                        value={smtpTestEmail}
+                        onChange={e => { setSmtpTestEmail(e.target.value); setSmtpTestResult(''); }}
+                        style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <button
+                      disabled={isSendingTestEmail || !smtpTestEmail.trim()}
+                      onClick={async () => {
+                        setIsSendingTestEmail(true);
+                        setSmtpTestResult('');
+                        try {
+                          const res = await fetch('/api/email/test', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ testEmail: smtpTestEmail.trim() }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error);
+                          setSmtpTestResult('✅ Test email sent! Check your inbox.');
+                        } catch (err) {
+                          setSmtpTestResult('❌ ' + err.message);
+                        } finally {
+                          setIsSendingTestEmail(false);
+                        }
+                      }}
+                      style={{ padding: '10px 22px', backgroundColor: isSendingTestEmail ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: isSendingTestEmail ? 'not-allowed' : 'pointer', height: '42px', whiteSpace: 'nowrap' }}
+                    >
+                      {isSendingTestEmail ? 'Sending...' : '📤 Send Test'}
+                    </button>
+                  </div>
+                  {smtpTestResult && (
+                    <p style={{ margin: '12px 0 0', fontSize: '13px', fontWeight: '500', color: smtpTestResult.includes('✅') ? '#16a34a' : '#dc2626' }}>
+                      {smtpTestResult}
+                    </p>
+                  )}
+                </div>
+
                 {/* Live Preview */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                   <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', color: '#475569' }}>🔍 Invoice Preview</h3>
@@ -2206,6 +2283,40 @@ function OwnerDashboard() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Email Invoice Modal */}
+          {emailModal && (
+            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '30px', width: '100%', maxWidth: '440px', boxSizing: 'border-box' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <h2 style={{ margin: '0', fontSize: '18px' }}>📧 Email Invoice</h2>
+                  <button onClick={() => setEmailModal(null)} style={{ background: 'none', border: 'none', fontSize: '20px', color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+                </div>
+                <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>
+                  Sending <strong>{emailModal.billNumber}</strong> for <strong>{emailModal.shopName}</strong>
+                </p>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Recipient Email</label>
+                <input
+                  type="email"
+                  autoFocus
+                  placeholder="shop@example.com"
+                  value={emailRecipient}
+                  onChange={e => setEmailRecipient(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSendInvoiceEmail()}
+                  style={{ width: '100%', padding: '12px 14px', border: '2px solid #cbd5e1', borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', marginBottom: '20px' }}
+                />
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={() => setEmailModal(null)} style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button onClick={handleSendInvoiceEmail} disabled={isSendingEmail || !emailRecipient.trim()}
+                    style={{ flex: 2, padding: '12px', backgroundColor: isSendingEmail ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: isSendingEmail ? 'not-allowed' : 'pointer' }}>
+                    {isSendingEmail ? 'Sending...' : '📧 Send Invoice'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
