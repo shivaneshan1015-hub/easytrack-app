@@ -63,6 +63,8 @@ function AgentPortal() {
   const [myMonthCollected, setMyMonthCollected] = useState(0);
   const [periodStats, setPeriodStats] = useState(null);
   const [periodView, setPeriodView] = useState('today');
+  const [myDeliveredBills, setMyDeliveredBills] = useState([]);
+  const [myReturns, setMyReturns] = useState([]);
 
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
@@ -120,6 +122,28 @@ function AgentPortal() {
     setMyMonthCollected(collected);
   }
 
+  async function loadMyReturnData() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const [{ data: rets }, { data: bills }] = await Promise.all([
+      supabase.from('returns')
+        .select('id, return_type, reason, total_credit, created_at, transaction_id, transactions(bill_number, shops(name)), return_items(product_name, quantity, unit_price)')
+        .eq('agent_name', agentName)
+        .order('created_at', { ascending: false }),
+      supabase.from('transactions')
+        .select('id, bill_number, bill_amount, shop_id, created_at, shops(name)')
+        .eq('employee_name', agentName)
+        .eq('status', 'delivered')
+        .order('created_at', { ascending: false })
+        .limit(30),
+    ]);
+    if (rets) setMyReturns(rets);
+    if (bills) {
+      const returnedIds = new Set((rets || []).map(r => r.transaction_id).filter(Boolean));
+      setMyDeliveredBills(bills.filter(b => !returnedIds.has(b.id)));
+    }
+  }
+
   async function loadInitialData() {
     const { data: empData } = await supabase.from('employees').select('name');
     if (empData) setEmployees(empData);
@@ -160,6 +184,7 @@ function AgentPortal() {
   useEffect(() => {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
     if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); }
+    if (activeTab === 'returns') loadMyReturnData();
   }, [activeTab, profile, selectedEmployee]);
 
   async function loadTodaysBeat() {
@@ -402,7 +427,7 @@ function AgentPortal() {
         .from('returns')
         .insert([{
           transaction_id: returnFormBill.id,
-          shop_id: selectedDeliveryShop.id,
+          shop_id: selectedDeliveryShop?.id || returnFormBill?.shop_id,
           agent_name: selectedEmployee || profile?.full_name || '',
           return_type: returnType,
           reason: returnReason.trim() || null,
@@ -449,8 +474,10 @@ function AgentPortal() {
       }
       addToast(`✅ ${returnType === 'return' ? 'Return' : 'Damage'} recorded — Credit: ₹${totalCredit.toLocaleString('en-IN')}`);
       setDeliveredBills(prev => prev.filter(b => b.id !== returnFormBill.id));
+      setMyDeliveredBills(prev => prev.filter(b => b.id !== returnFormBill.id));
       setReturnFormBill(null);
       setReturnItems([]);
+      loadMyReturnData();
     } catch (err) {
       alert('Failed: ' + err.message);
     } finally {
@@ -582,6 +609,7 @@ function AgentPortal() {
         <div style={{ display: 'flex', borderRadius: '8px', backgroundColor: '#f1f5f9', padding: '4px', marginBottom: '25px', gap: '2px' }}>
           <button type="button" onClick={() => setActiveTab('booking')} style={tabStyle('booking')}>📝 Book Order</button>
           <button type="button" onClick={() => setActiveTab('delivery')} style={tabStyle('delivery')}>📦 Deliver & Collect</button>
+          <button type="button" onClick={() => setActiveTab('returns')} style={tabStyle('returns')}>↩ Returns</button>
           <button type="button" onClick={() => setActiveTab('leave')} style={tabStyle('leave')}>🏖️ Leave</button>
         </div>
 
@@ -983,6 +1011,125 @@ function AgentPortal() {
             )}
           </div>
 
+        ) : activeTab === 'returns' ? (
+          /* ── RETURNS TAB ── */
+          <div>
+            {/* New Return Form */}
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 'bold' }}>↩ Record Return / Damage</h3>
+              <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Select a delivered bill to record a return or damage report.</p>
+              {myDeliveredBills.length === 0 ? (
+                <p style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No recent deliveries available for return.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {myDeliveredBills.map(bill => (
+                    <div key={bill.id}>
+                      <div style={{ padding: '12px 14px', borderRadius: '8px', border: returnFormBill?.id === bill.id ? '2px solid #f97316' : '1px solid #e2e8f0', backgroundColor: returnFormBill?.id === bill.id ? '#fff7ed' : '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '13px' }}>{bill.bill_number}</p>
+                          <p style={{ margin: '0', fontSize: '12px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {bill.shops?.name} · ₹{parseFloat(bill.bill_amount).toLocaleString('en-IN')} · {new Date(bill.created_at).toLocaleDateString('en-IN')}
+                          </p>
+                        </div>
+                        <button type="button" onClick={() => handleOpenReturnForm(bill)}
+                          style={{ flexShrink: 0, padding: '7px 14px', backgroundColor: returnFormBill?.id === bill.id ? '#f1f5f9' : '#fff7ed', color: returnFormBill?.id === bill.id ? '#64748b' : '#c2410c', border: `1px solid ${returnFormBill?.id === bill.id ? '#e2e8f0' : '#fed7aa'}`, borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                          {returnFormBill?.id === bill.id ? '✕ Cancel' : '↩ Return / Damage'}
+                        </button>
+                      </div>
+                      {returnFormBill?.id === bill.id && (
+                        <div style={{ padding: '16px', border: '2px solid #f97316', borderRadius: '0 0 8px 8px', backgroundColor: '#fff7ed', marginTop: '-2px' }}>
+                          <h4 style={{ margin: '0 0 12px', color: '#c2410c', fontSize: '15px' }}>↩ Record Return / Damage</h4>
+                          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                            {['return', 'damage'].map(t => (
+                              <button key={t} type="button" onClick={() => setReturnType(t)}
+                                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: `2px solid ${returnType === t ? (t === 'return' ? '#16a34a' : '#dc2626') : '#e2e8f0'}`, backgroundColor: returnType === t ? (t === 'return' ? '#f0fdf4' : '#fef2f2') : '#ffffff', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', color: returnType === t ? (t === 'return' ? '#15803d' : '#dc2626') : '#475569' }}>
+                                {t === 'return' ? '↩ Return' : '⚠️ Damage'}
+                              </button>
+                            ))}
+                          </div>
+                          <p style={{ margin: '0 0 12px', fontSize: '12px', color: returnType === 'return' ? '#15803d' : '#dc2626', fontWeight: '500' }}>
+                            {returnType === 'return' ? '✅ Stock will be added back to inventory' : '⚠️ Stock will NOT be restored (goods are unusable)'}
+                          </p>
+                          <p style={{ margin: '0 0 6px', fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>Select quantities to return:</p>
+                          {returnItems.map((item, idx) => (
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '6px', border: item.returnQty > 0 ? '1px solid #f97316' : '1px solid #e2e8f0' }}>
+                              <div>
+                                <p style={{ margin: '0', fontSize: '14px', fontWeight: '500' }}>{item.products?.name}</p>
+                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Delivered: {item.quantity} · ₹{item.products?.unit_price} each</p>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '12px', color: '#64748b' }}>Qty:</span>
+                                <input type="number" min="0" max={item.quantity} value={item.returnQty}
+                                  onChange={(e) => { const val = Math.min(parseInt(e.target.value) || 0, item.quantity); setReturnItems(prev => prev.map((it, i) => i === idx ? { ...it, returnQty: val } : it)); }}
+                                  style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: '14px', backgroundColor: '#ffffff', color: '#0f172a' }} />
+                              </div>
+                            </div>
+                          ))}
+                          {returnItems.some(i => i.returnQty > 0) && (
+                            <div style={{ padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '12px', border: '1px solid #fed7aa', fontSize: '13px' }}>
+                              Credit amount: <strong>₹{returnItems.reduce((sum, item) => sum + parseFloat(item.products?.unit_price || 0) * item.returnQty, 0).toLocaleString('en-IN')}</strong>
+                            </div>
+                          )}
+                          <input type="text" placeholder="Reason (e.g. shop rejected, expired, damaged in transit)" value={returnReason}
+                            onChange={(e) => setReturnReason(e.target.value)}
+                            style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '14px', boxSizing: 'border-box', marginBottom: '12px', backgroundColor: '#ffffff', color: '#0f172a' }} />
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button type="button" onClick={() => { setReturnFormBill(null); setReturnItems([]); }}
+                              style={{ flex: 1, padding: '12px', backgroundColor: '#ffffff', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Cancel</button>
+                            <button type="button" onClick={handleSubmitReturn} disabled={isSubmittingReturn || !returnItems.some(i => i.returnQty > 0)}
+                              style={{ flex: 2, padding: '12px', backgroundColor: isSubmittingReturn ? '#94a3b8' : '#f97316', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: isSubmittingReturn ? 'not-allowed' : 'pointer', fontSize: '14px' }}>
+                              {isSubmittingReturn ? 'Recording...' : `✅ Record ${returnType === 'return' ? 'Return' : 'Damage'}`}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* My Returns History */}
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: '16px', fontWeight: 'bold' }}>📋 My Returns History</h3>
+              {myReturns.length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>No returns or damages recorded yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {myReturns.map(r => (
+                    <div key={r.id} style={{ padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' }}>
+                        <div>
+                          <span style={{ fontWeight: 'bold', fontSize: '13px' }}>{r.transactions?.bill_number || '—'}</span>
+                          <span style={{ marginLeft: '8px', fontSize: '12px', color: '#64748b' }}>{r.transactions?.shops?.name}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', backgroundColor: r.return_type === 'return' ? '#dbeafe' : '#fee2e2', color: r.return_type === 'return' ? '#1d4ed8' : '#dc2626' }}>
+                            {r.return_type === 'return' ? '↩ Return' : '⚠️ Damage'}
+                          </span>
+                          <span style={{ fontWeight: 'bold', color: r.return_type === 'return' ? '#2563eb' : '#dc2626', fontSize: '13px' }}>₹{parseFloat(r.total_credit || 0).toLocaleString('en-IN')}</span>
+                        </div>
+                      </div>
+                      {(r.return_items || []).length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+                          {r.return_items.map((item, i) => (
+                            <span key={i} style={{ fontSize: '11px', backgroundColor: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '10px' }}>
+                              {item.product_name} ×{item.quantity}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#94a3b8' }}>
+                        <span>{r.reason || '—'}</span>
+                        <span>{new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
         ) : (
           /* ── LEAVE TAB ── */
           <div>
@@ -1095,6 +1242,7 @@ function AgentPortal() {
         {[
           { tab: 'booking',  icon: '📝', label: 'Book Order' },
           { tab: 'delivery', icon: '📦', label: 'Deliver'    },
+          { tab: 'returns',  icon: '↩',  label: 'Returns'    },
           { tab: 'leave',    icon: '🏖️', label: 'Leave'      },
         ].map(({ tab, icon, label }) => (
           <button key={tab} type="button" onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', color: activeTab === tab ? '#2563eb' : '#94a3b8', borderTop: `2px solid ${activeTab === tab ? '#2563eb' : 'transparent'}`, marginTop: '-2px' }}>
