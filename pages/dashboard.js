@@ -200,6 +200,8 @@ function OwnerDashboard() {
   const [briefing, setBriefing] = useState(null);
   const [agentTargets, setAgentTargets] = useState([]);
   const [targetModal, setTargetModal] = useState(null);
+  const [agentPerf, setAgentPerf] = useState({ today: {}, week: {} });
+  const [agentPerfView, setAgentPerfView] = useState('today');
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -466,6 +468,34 @@ function OwnerDashboard() {
     setAgentsList(agentsWithCounts);
   }
 
+  async function loadAgentPerformance() {
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from('transactions')
+      .select('employee_name, bill_amount, amount_received, delivered_at')
+      .eq('status', 'delivered')
+      .gte('delivered_at', weekStart.toISOString());
+    const week = {}, today = {};
+    (data || []).forEach(t => {
+      const n = t.employee_name; if (!n) return;
+      if (!week[n]) week[n] = { bills: 0, sales: 0, collected: 0 };
+      week[n].bills++;
+      week[n].sales += parseFloat(t.bill_amount || 0);
+      week[n].collected += parseFloat(t.amount_received || 0);
+      if (t.delivered_at && new Date(t.delivered_at) >= todayStart) {
+        if (!today[n]) today[n] = { bills: 0, sales: 0, collected: 0 };
+        today[n].bills++;
+        today[n].sales += parseFloat(t.bill_amount || 0);
+        today[n].collected += parseFloat(t.amount_received || 0);
+      }
+    });
+    setAgentPerf({ today, week });
+  }
+
   async function loadAgentTargets() {
     const month = new Date().toISOString().slice(0, 7);
     const { data } = await supabase.from('agent_targets').select('*').eq('month', month);
@@ -592,7 +622,7 @@ function OwnerDashboard() {
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -2492,6 +2522,62 @@ function OwnerDashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* Agent Performance Summary */}
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📊 Agent Performance</h3>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>Deliveries and collections by agent.</p>
+                    </div>
+                    <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                      <button onClick={() => setAgentPerfView('today')} style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: agentPerfView === 'today' ? '#0f172a' : '#f8fafc', color: agentPerfView === 'today' ? '#ffffff' : '#475569' }}>Today</button>
+                      <button onClick={() => setAgentPerfView('week')} style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: agentPerfView === 'week' ? '#0f172a' : '#f8fafc', color: agentPerfView === 'week' ? '#ffffff' : '#475569', borderLeft: '1px solid #e2e8f0' }}>This Week</button>
+                    </div>
+                  </div>
+                  {agentsList.length === 0 ? (
+                    <p style={{ color: '#64748b', fontSize: '13px' }}>No agents found.</p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', minWidth: '500px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Bills Delivered</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Sales</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Collected</th>
+                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Efficiency</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {agentsList
+                            .map(agent => {
+                              const d = (agentPerfView === 'today' ? agentPerf.today : agentPerf.week)[agent.full_name] || { bills: 0, sales: 0, collected: 0 };
+                              return { agent, d, eff: d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0 };
+                            })
+                            .sort((a, b) => b.d.sales - a.d.sales)
+                            .map(({ agent, d, eff }, i) => (
+                              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', opacity: d.bills === 0 ? 0.45 : 1 }}>
+                                <td style={{ padding: '11px 14px', fontWeight: 'bold' }}>{agent.full_name}</td>
+                                <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                                  {d.bills > 0
+                                    ? <span style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 10px', borderRadius: '12px', fontWeight: 'bold' }}>{d.bills}</span>
+                                    : <span style={{ color: '#cbd5e1' }}>0</span>}
+                                </td>
+                                <td style={{ padding: '11px 14px', textAlign: 'right', color: d.sales > 0 ? '#2563eb' : '#cbd5e1', fontWeight: d.sales > 0 ? 'bold' : 'normal' }}>₹{d.sales.toLocaleString('en-IN')}</td>
+                                <td style={{ padding: '11px 14px', textAlign: 'right', color: d.collected > 0 ? '#16a34a' : '#cbd5e1', fontWeight: d.collected > 0 ? 'bold' : 'normal' }}>₹{d.collected.toLocaleString('en-IN')}</td>
+                                <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                                  {d.bills > 0
+                                    ? <span style={{ backgroundColor: eff >= 80 ? '#dcfce7' : '#fef9c3', color: eff >= 80 ? '#15803d' : '#854d0e', padding: '3px 10px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px' }}>{eff}%</span>
+                                    : <span style={{ color: '#cbd5e1' }}>—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
 
                 {/* 2. Field Agents List */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>

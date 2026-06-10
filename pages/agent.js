@@ -61,6 +61,8 @@ function AgentPortal() {
   const [myTarget, setMyTarget] = useState(null);
   const [myMonthSales, setMyMonthSales] = useState(0);
   const [myMonthCollected, setMyMonthCollected] = useState(0);
+  const [periodStats, setPeriodStats] = useState(null);
+  const [periodView, setPeriodView] = useState('today');
 
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
@@ -74,6 +76,27 @@ function AgentPortal() {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setBillNumber(`ET-2026-${timestamp}-${randomSuffix}`);
   };
+
+  async function loadPeriodStats() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase.from('transactions')
+      .select('bill_amount, amount_received, delivered_at')
+      .eq('employee_name', agentName)
+      .eq('status', 'delivered')
+      .gte('delivered_at', weekStart.toISOString());
+    const sum = (txns) => ({
+      bills: txns.length,
+      sales: txns.reduce((s, t) => s + parseFloat(t.bill_amount || 0), 0),
+      collected: txns.reduce((s, t) => s + parseFloat(t.amount_received || 0), 0),
+    });
+    const todayTxns = (data || []).filter(t => t.delivered_at && new Date(t.delivered_at) >= todayStart);
+    setPeriodStats({ today: sum(todayTxns), week: sum(data || []) });
+  }
 
   async function loadMyTarget() {
     const agentName = profile?.full_name;
@@ -136,7 +159,7 @@ function AgentPortal() {
 
   useEffect(() => {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
-    if (activeTab === 'delivery') loadTodaysBeat();
+    if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); }
   }, [activeTab, profile, selectedEmployee]);
 
   async function loadTodaysBeat() {
@@ -686,6 +709,42 @@ function AgentPortal() {
         ) : activeTab === 'delivery' ? (
           /* ── PHASE 2: DELIVER & COLLECT ── */
           <div>
+
+            {/* ── PERFORMANCE SUMMARY ── */}
+            {periodStats && (() => {
+              const stats = periodView === 'today' ? periodStats.today : periodStats.week;
+              const eff = stats.sales > 0 ? Math.round((stats.collected / stats.sales) * 100) : 0;
+              const fmt = (v) => v >= 100000 ? (v / 100000).toFixed(1) + 'L' : v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toString();
+              return (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>📊 My Performance</span>
+                    <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                      <button type="button" onClick={() => setPeriodView('today')} style={{ padding: '5px 14px', fontSize: '12px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: periodView === 'today' ? '#0f172a' : '#f8fafc', color: periodView === 'today' ? '#ffffff' : '#475569' }}>Today</button>
+                      <button type="button" onClick={() => setPeriodView('week')} style={{ padding: '5px 14px', fontSize: '12px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: periodView === 'week' ? '#0f172a' : '#f8fafc', color: periodView === 'week' ? '#ffffff' : '#475569', borderLeft: '1px solid #e2e8f0' }}>This Week</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                    <div style={{ backgroundColor: '#eff6ff', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                      <p style={{ margin: '0 0 3px', fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Bills</p>
+                      <p style={{ margin: '0', fontSize: '22px', fontWeight: 'bold', color: '#2563eb' }}>{stats.bills}</p>
+                    </div>
+                    <div style={{ backgroundColor: '#eff6ff', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                      <p style={{ margin: '0 0 3px', fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Sales</p>
+                      <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>₹{fmt(stats.sales)}</p>
+                    </div>
+                    <div style={{ backgroundColor: '#f0fdf4', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                      <p style={{ margin: '0 0 3px', fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Collected</p>
+                      <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold', color: '#16a34a' }}>₹{fmt(stats.collected)}</p>
+                    </div>
+                    <div style={{ backgroundColor: eff >= 80 ? '#f0fdf4' : '#fefce8', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                      <p style={{ margin: '0 0 3px', fontSize: '10px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase' }}>Efficiency</p>
+                      <p style={{ margin: '0', fontSize: '22px', fontWeight: 'bold', color: eff >= 80 ? '#16a34a' : '#d97706' }}>{eff}%</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── TODAY'S BEAT ── */}
             {todaysBeat.length > 0 && (
