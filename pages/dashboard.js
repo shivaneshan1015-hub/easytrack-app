@@ -193,6 +193,7 @@ function OwnerDashboard() {
   const [smtpTestResult, setSmtpTestResult] = useState('');
   const [restockModal, setRestockModal] = useState(null);
   const [restockQty, setRestockQty] = useState('');
+  const [briefing, setBriefing] = useState(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -219,6 +220,41 @@ function OwnerDashboard() {
       .eq('status', 'draft').order('created_at', { ascending: false });
     if (data) setPendingOrders(data);
     setIsLoading(false);
+  }
+
+  async function loadDailyBriefing() {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [dispatchedRes, collectedRes, outstandingRes] = await Promise.all([
+      supabase.from('transactions').select('id', { count: 'exact' }).eq('status', 'approved'),
+      supabase.from('transactions')
+        .select('amount_received')
+        .eq('status', 'delivered')
+        .gte('delivered_at', todayStart.toISOString()),
+      supabase.from('transactions')
+        .select('bill_number, bill_amount, pending_amount, created_at, shops(name)')
+        .eq('status', 'delivered')
+        .gt('pending_amount', 0),
+    ]);
+
+    const dispatchedCount = dispatchedRes.count || 0;
+    const collectedToday = (collectedRes.data || []).reduce((s, t) => s + parseFloat(t.amount_received || 0), 0);
+    const outstandingBills = outstandingRes.data || [];
+    const totalOutstanding = outstandingBills.reduce((s, t) => s + parseFloat(t.pending_amount || 0), 0);
+    const uniqueShops = new Set(outstandingBills.map(b => b.shops?.name)).size;
+
+    const fifteenDaysAgo = new Date();
+    fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+    const urgent = outstandingBills
+      .filter(b => new Date(b.created_at) < fifteenDaysAgo)
+      .sort((a, b) => parseFloat(b.pending_amount) - parseFloat(a.pending_amount))
+      .slice(0, 3);
+
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+    setBriefing({ dispatchedCount, collectedToday, totalOutstanding, uniqueShops, urgent, greeting });
   }
 
   async function loadHistoryLedger() {
@@ -523,7 +559,7 @@ function OwnerDashboard() {
     setSelectedOrder(null);
     setSelectedShopLedger(null);
     setSelectedAgentForOrder('');
-    if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); }
+    if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
@@ -1167,7 +1203,50 @@ function OwnerDashboard() {
               <p style={{ padding: '20px', color: '#64748b' }}>Loading...</p>
 
             ) : activeTab === 'pending' ? (
-              pendingOrders.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+              {/* ── DAILY BRIEFING ── */}
+              {briefing && (
+                <div style={{ backgroundColor: '#0f172a', borderRadius: '12px', padding: '24px 28px', color: '#f8fafc' }}>
+                  <p style={{ margin: '0 0 18px', fontSize: '16px', color: '#94a3b8' }}>
+                    {briefing.greeting}, <strong style={{ color: '#f8fafc' }}>{profile?.full_name?.split(' ')[0] || 'there'}</strong> 👋
+                  </p>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: briefing.urgent.length > 0 ? '20px' : '0' }}>
+                    <div style={{ flex: 1, minWidth: '120px', backgroundColor: '#1e293b', borderRadius: '8px', padding: '14px 16px' }}>
+                      <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Dispatched</p>
+                      <p style={{ margin: '0', fontSize: '26px', fontWeight: 'bold', color: '#38bdf8' }}>{briefing.dispatchedCount}</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#475569' }}>bills en route</p>
+                    </div>
+                    <div style={{ flex: 1, minWidth: '120px', backgroundColor: '#1e293b', borderRadius: '8px', padding: '14px 16px' }}>
+                      <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Collected Today</p>
+                      <p style={{ margin: '0', fontSize: '22px', fontWeight: 'bold', color: '#4ade80' }}>₹{briefing.collectedToday.toLocaleString('en-IN')}</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#475569' }}>cash & UPI in</p>
+                    </div>
+                    <div style={{ flex: 1, minWidth: '120px', backgroundColor: '#1e293b', borderRadius: '8px', padding: '14px 16px' }}>
+                      <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Outstanding</p>
+                      <p style={{ margin: '0', fontSize: '22px', fontWeight: 'bold', color: '#fca5a5' }}>₹{briefing.totalOutstanding.toLocaleString('en-IN')}</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#475569' }}>from {briefing.uniqueShops} shop{briefing.uniqueShops !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  {briefing.urgent.length > 0 && (
+                    <div style={{ backgroundColor: '#450a0a', border: '1px solid #7f1d1d', borderRadius: '8px', padding: '14px 16px' }}>
+                      <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: 'bold', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🔴 Overdue 15+ days — needs follow-up
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {briefing.urgent.map((b, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                            <span style={{ color: '#fecaca' }}>{b.shops?.name || 'Unknown Shop'}</span>
+                            <span style={{ color: '#fca5a5', fontWeight: 'bold' }}>₹{parseFloat(b.pending_amount).toLocaleString('en-IN')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {pendingOrders.length === 0 ? (
                 <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <p style={{ margin: '0', color: '#64748b' }}>No pending orders.</p>
                 </div>
@@ -1194,7 +1273,8 @@ function OwnerDashboard() {
                     ))}</tbody>
                   </table>
                 </div>
-              )
+              )}
+              </div>
 
             ) : activeTab === 'history' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
