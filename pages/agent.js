@@ -70,6 +70,10 @@ function AgentPortal() {
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [isMarkingAttendance, setIsMarkingAttendance] = useState(false);
 
+  // Shop statement
+  const [shopStatement, setShopStatement] = useState([]);
+  const [showShopStatement, setShowShopStatement] = useState(false);
+
   // Shop visit check-ins
   const [checkInOutcome, setCheckInOutcome] = useState('visited');
   const [checkInNote, setCheckInNote] = useState('');
@@ -434,9 +438,11 @@ function AgentPortal() {
     setDeliveredBills([]);
     setReturnFormBill(null);
     setReturnItems([]);
+    setShopStatement([]);
+    setShowShopStatement(false);
     setIsLoadingBills(true);
 
-    const [pendingRes, deliveredRes] = await Promise.all([
+    const [pendingRes, deliveredRes, stmtRes] = await Promise.all([
       supabase
         .from('transactions')
         .select('id, bill_number, bill_amount, amount_received, pending_amount, status')
@@ -449,10 +455,17 @@ function AgentPortal() {
         .eq('shop_id', shop.id)
         .eq('status', 'delivered')
         .order('created_at', { ascending: false })
-        .limit(10)
+        .limit(10),
+      supabase
+        .from('transactions')
+        .select('id, bill_number, bill_amount, amount_received, pending_amount, status, created_at')
+        .eq('shop_id', shop.id)
+        .order('created_at', { ascending: false })
+        .limit(50),
     ]);
 
     if (!pendingRes.error && pendingRes.data) setPendingBills(pendingRes.data);
+    if (!stmtRes.error && stmtRes.data) setShopStatement(stmtRes.data);
 
     const deliveredData = deliveredRes.error ? [] : (deliveredRes.data || []);
     if (deliveredData.length > 0) {
@@ -984,7 +997,7 @@ function AgentPortal() {
                     <p style={{ margin: '0', fontWeight: 'bold', fontSize: '15px', color: '#166534' }}>{selectedDeliveryShop.name}</p>
                     <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Select a pending bill below</p>
                   </div>
-                  <button onClick={() => { setSelectedDeliveryShop(null); setShopSearchText(''); setPendingBills([]); setMatchedOrder(null); }}
+                  <button onClick={() => { setSelectedDeliveryShop(null); setShopSearchText(''); setPendingBills([]); setMatchedOrder(null); setShopStatement([]); setShowShopStatement(false); }}
                     style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
                 </div>
 
@@ -1023,6 +1036,62 @@ function AgentPortal() {
                           {isCheckingIn ? '...' : '📍 Check In'}
                         </button>
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ── SHOP STATEMENT ── */}
+                {shopStatement.length > 0 && (() => {
+                  const totalOutstanding = shopStatement.reduce((s, t) => {
+                    if (t.status === 'delivered') return s + parseFloat(t.pending_amount || 0);
+                    if (t.status === 'approved' || t.status === 'draft') return s + parseFloat(t.bill_amount || 0);
+                    return s;
+                  }, 0);
+                  return (
+                    <div style={{ marginBottom: '12px' }}>
+                      <button type="button" onClick={() => setShowShopStatement(v => !v)}
+                        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: totalOutstanding > 0 ? '#fef9c3' : '#f0fdf4', border: `1px solid ${totalOutstanding > 0 ? '#fde68a' : '#bbf7d0'}`, borderRadius: showShopStatement ? '8px 8px 0 0' : '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', color: '#0f172a' }}>
+                        <span>📊 Shop Statement ({shopStatement.length} bills)</span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {totalOutstanding > 0 && <span style={{ color: '#dc2626', fontWeight: 'bold' }}>₹{totalOutstanding.toLocaleString('en-IN')} due</span>}
+                          <span style={{ color: '#94a3b8' }}>{showShopStatement ? '▲' : '▼'}</span>
+                        </span>
+                      </button>
+                      {showShopStatement && (
+                        <div style={{ border: '1px solid #e2e8f0', borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
+                          {totalOutstanding > 0 && (
+                            <div style={{ padding: '10px 14px', backgroundColor: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '13px', color: '#dc2626', fontWeight: 'bold' }}>Total Outstanding</span>
+                              <span style={{ fontSize: '16px', color: '#dc2626', fontWeight: 'bold' }}>₹{totalOutstanding.toLocaleString('en-IN')}</span>
+                            </div>
+                          )}
+                          {shopStatement.map((t, i) => {
+                            const isSettled = t.status === 'delivered' && parseFloat(t.pending_amount || 0) === 0;
+                            const isPending = t.status === 'approved' || t.status === 'draft';
+                            const balance = isPending ? parseFloat(t.bill_amount) : parseFloat(t.pending_amount || 0);
+                            return (
+                              <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: i % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #f1f5f9', gap: '8px' }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '13px' }}>{t.bill_number}</p>
+                                  <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>{new Date(t.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ₹{parseFloat(t.bill_amount).toLocaleString('en-IN')}</p>
+                                </div>
+                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                  {isPending ? (
+                                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#d97706', backgroundColor: '#fef9c3', padding: '2px 8px', borderRadius: '10px' }}>⏳ Pending</span>
+                                  ) : isSettled ? (
+                                    <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 8px', borderRadius: '10px' }}>✅ Settled</span>
+                                  ) : (
+                                    <div>
+                                      <p style={{ margin: '0 0 2px', fontSize: '12px', color: '#dc2626', fontWeight: 'bold' }}>₹{balance.toLocaleString('en-IN')} due</p>
+                                      <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>of ₹{parseFloat(t.bill_amount).toLocaleString('en-IN')}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
