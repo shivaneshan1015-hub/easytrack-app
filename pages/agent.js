@@ -66,6 +66,12 @@ function AgentPortal() {
   const [myDeliveredBills, setMyDeliveredBills] = useState([]);
   const [myReturns, setMyReturns] = useState([]);
 
+  // Shop visit check-ins
+  const [checkInOutcome, setCheckInOutcome] = useState('visited');
+  const [checkInNote, setCheckInNote] = useState('');
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [todayCheckIns, setTodayCheckIns] = useState([]);
+
   // Expenses
   const [myExpenses, setMyExpenses] = useState([]);
   const [expenseCategory, setExpenseCategory] = useState('Travel');
@@ -129,6 +135,49 @@ function AgentPortal() {
     setMyMonthSales(sales);
     setMyMonthCollected(collected);
   }
+
+  async function loadTodayCheckIns() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase.from('shop_visits')
+      .select('id, shop_id, shop_name, visited_at, outcome, note')
+      .eq('agent_name', agentName)
+      .gte('visited_at', todayStart.toISOString())
+      .order('visited_at', { ascending: false });
+    if (data) setTodayCheckIns(data);
+  }
+
+  const handleCheckIn = () => {
+    if (!selectedDeliveryShop) return;
+    setIsCheckingIn(true);
+    const doInsert = async (lat, lng) => {
+      const { error } = await supabase.from('shop_visits').insert([{
+        agent_name: profile?.full_name || selectedEmployee,
+        shop_id: selectedDeliveryShop.id,
+        shop_name: selectedDeliveryShop.name,
+        outcome: checkInOutcome,
+        note: checkInNote.trim() || null,
+        latitude: lat || null,
+        longitude: lng || null,
+      }]);
+      setIsCheckingIn(false);
+      if (error) return alert('Check-in failed: ' + error.message);
+      addToast(`📍 Checked in at ${selectedDeliveryShop.name}`);
+      setCheckInNote('');
+      setCheckInOutcome('visited');
+      loadTodayCheckIns();
+    };
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => doInsert(pos.coords.latitude, pos.coords.longitude),
+        () => doInsert(null, null),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      doInsert(null, null);
+    }
+  };
 
   async function loadMyExpenses() {
     const agentName = profile?.full_name;
@@ -225,7 +274,7 @@ function AgentPortal() {
 
   useEffect(() => {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
-    if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); }
+    if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); loadTodayCheckIns(); }
     if (activeTab === 'returns') loadMyReturnData();
     if (activeTab === 'expenses') loadMyExpenses();
   }, [activeTab, profile, selectedEmployee]);
@@ -818,6 +867,20 @@ function AgentPortal() {
               );
             })()}
 
+            {/* ── TODAY'S CHECK-INS STRIP ── */}
+            {todayCheckIns.length > 0 && (
+              <div style={{ marginBottom: '16px', padding: '12px 14px', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 'bold', color: '#15803d' }}>📍 Today's Check-ins ({todayCheckIns.length})</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {todayCheckIns.map(c => (
+                    <span key={c.id} style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '20px', backgroundColor: c.outcome === 'visited' ? '#dcfce7' : c.outcome === 'closed' ? '#fee2e2' : '#fef9c3', color: c.outcome === 'visited' ? '#15803d' : c.outcome === 'closed' ? '#dc2626' : '#854d0e', fontWeight: '500' }}>
+                      {c.outcome === 'visited' ? '✅' : c.outcome === 'closed' ? '🔒' : '🚫'} {c.shop_name} · {new Date(c.visited_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── TODAY'S BEAT ── */}
             {todaysBeat.length > 0 && (
               <div style={{ marginBottom: '20px', padding: '16px', backgroundColor: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px' }}>
@@ -874,6 +937,45 @@ function AgentPortal() {
                   <button onClick={() => { setSelectedDeliveryShop(null); setShopSearchText(''); setPendingBills([]); setMatchedOrder(null); }}
                     style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
                 </div>
+
+                {/* ── CHECK-IN CARD ── */}
+                {(() => {
+                  const existing = todayCheckIns.find(c => c.shop_id === selectedDeliveryShop.id);
+                  if (existing) {
+                    return (
+                      <div style={{ marginBottom: '12px', padding: '10px 14px', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '18px' }}>📍</span>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ margin: '0', fontSize: '13px', fontWeight: 'bold', color: '#15803d' }}>Checked in today</p>
+                          <p style={{ margin: '0', fontSize: '11px', color: '#64748b' }}>{existing.outcome} · {new Date(existing.visited_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}{existing.note ? ` · ${existing.note}` : ''}</p>
+                        </div>
+                        <button type="button" onClick={() => { setCheckInOutcome('visited'); setCheckInNote(''); setTodayCheckIns(prev => prev.filter(c => c.id !== existing.id)); }}
+                          style={{ fontSize: '11px', padding: '4px 10px', border: '1px solid #bbf7d0', borderRadius: '6px', background: '#ffffff', color: '#64748b', cursor: 'pointer' }}>Update</button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div style={{ marginBottom: '12px', padding: '14px', backgroundColor: '#fafafa', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <p style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>📍 Check In at this shop</p>
+                      <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                        {[['visited','✅ Visited','#16a34a','#f0fdf4','#bbf7d0'],['no_answer','🚫 No Answer','#d97706','#fefce8','#fde68a'],['closed','🔒 Closed','#dc2626','#fef2f2','#fecaca']].map(([val,label,col,bg,border]) => (
+                          <button key={val} type="button" onClick={() => setCheckInOutcome(val)}
+                            style={{ flex: 1, padding: '8px 4px', borderRadius: '6px', border: `2px solid ${checkInOutcome === val ? col : '#e2e8f0'}`, backgroundColor: checkInOutcome === val ? bg : '#ffffff', color: checkInOutcome === val ? col : '#64748b', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input type="text" placeholder="Note (optional)" value={checkInNote} onChange={e => setCheckInNote(e.target.value)}
+                          style={{ flex: 1, padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#0f172a' }} />
+                        <button type="button" onClick={handleCheckIn} disabled={isCheckingIn}
+                          style={{ padding: '8px 16px', backgroundColor: isCheckingIn ? '#94a3b8' : '#2563eb', color: '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: isCheckingIn ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                          {isCheckingIn ? '...' : '📍 Check In'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {isLoadingBills ? (
                   <p style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Loading bills...</p>

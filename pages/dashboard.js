@@ -158,6 +158,7 @@ function OwnerDashboard() {
   const [allExpenses, setAllExpenses] = useState([]);
   const [expenseAgentFilter, setExpenseAgentFilter] = useState('all');
   const [expenseStatusFilter, setExpenseStatusFilter] = useState('all');
+  const [shopVisits, setShopVisits] = useState([]);
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
   const [shopDirSearch, setShopDirSearch] = useState('');
   const [ledgerSearch, setLedgerSearch] = useState('');
@@ -548,6 +549,15 @@ function OwnerDashboard() {
     if (data) setReturnsList(data);
   }
 
+  async function loadShopVisits() {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase.from('shop_visits')
+      .select('id, agent_name, shop_id, shop_name, visited_at, outcome, note, latitude, longitude, shops(latitude, longitude)')
+      .gte('visited_at', todayStart.toISOString())
+      .order('visited_at', { ascending: false });
+    if (data) setShopVisits(data);
+  }
+
   async function loadExpenses() {
     const { data } = await supabase.from('agent_expenses')
       .select('*')
@@ -657,7 +667,7 @@ function OwnerDashboard() {
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -2742,6 +2752,56 @@ function OwnerDashboard() {
                               </tr>
                             ))}
                         </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── TODAY'S SHOP VISITS ── */}
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📍 Today's Shop Visits</h3>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{shopVisits.length} check-in{shopVisits.length !== 1 ? 's' : ''} recorded today</p>
+                    </div>
+                    <button onClick={loadShopVisits} style={{ padding: '6px 14px', border: '1.5px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', backgroundColor: '#f8fafc', color: '#475569' }}>↺ Refresh</button>
+                  </div>
+                  {shopVisits.length === 0 ? (
+                    <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No check-ins today yet.</p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Time</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Shop</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Outcome</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>GPS Distance</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Note</th>
+                        </tr></thead>
+                        <tbody>{shopVisits.map(v => {
+                          const shopLat = v.shops?.latitude; const shopLng = v.shops?.longitude;
+                          const distM = (v.latitude && shopLat)
+                            ? Math.round(calcDistance(parseFloat(v.latitude), parseFloat(v.longitude), parseFloat(shopLat), parseFloat(shopLng)) * 1000)
+                            : null;
+                          const isVisited = v.outcome === 'visited'; const isClosed = v.outcome === 'closed';
+                          return (
+                            <tr key={v.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '10px 12px', color: '#64748b' }}>{new Date(v.visited_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+                              <td style={{ padding: '10px 12px', fontWeight: '500' }}>{v.agent_name}</td>
+                              <td style={{ padding: '10px 12px' }}>{v.shop_name}</td>
+                              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isVisited ? '#dcfce7' : isClosed ? '#fee2e2' : '#fef9c3', color: isVisited ? '#15803d' : isClosed ? '#dc2626' : '#854d0e' }}>
+                                  {isVisited ? '✅ Visited' : isClosed ? '🔒 Closed' : '🚫 No Answer'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', color: distM === null ? '#94a3b8' : distM <= 200 ? '#16a34a' : distM <= 500 ? '#d97706' : '#dc2626', fontWeight: distM !== null ? 'bold' : 'normal' }}>
+                                {distM === null ? '—' : distM < 1000 ? `${distM}m` : `${(distM/1000).toFixed(1)}km`}
+                              </td>
+                              <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.note || '—'}</td>
+                            </tr>
+                          );
+                        })}</tbody>
                       </table>
                     </div>
                   )}
