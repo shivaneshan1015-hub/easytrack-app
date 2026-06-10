@@ -55,6 +55,10 @@ function AgentPortal() {
   const [returnReason, setReturnReason] = useState('');
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
 
+  const [ownerUpiId, setOwnerUpiId] = useState('');
+  const [ownerCompanyName, setOwnerCompanyName] = useState('EasyTrack');
+  const [showUpiQr, setShowUpiQr] = useState(false);
+
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
     const id = Date.now();
@@ -75,6 +79,14 @@ function AgentPortal() {
     if (shopData) setShops(shopData);
     const { data: prodData } = await supabase.from('products').select('id, name, unit_price').eq('is_active', true);
     if (prodData) setProductCatalog(prodData);
+    try {
+      const res = await fetch('/api/settings/public');
+      if (res.ok) {
+        const settings = await res.json();
+        if (settings.upi_id) setOwnerUpiId(settings.upi_id);
+        if (settings.company_name) setOwnerCompanyName(settings.company_name);
+      }
+    } catch (_) {}
   }
 
   async function loadLeaveHistory() {
@@ -801,12 +813,21 @@ function AgentPortal() {
                 </div>
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', color: '#14532d', fontSize: '14px' }}>Payment Mode</label>
-                  <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}
+                  <select value={paymentMode} onChange={(e) => { setPaymentMode(e.target.value); setShowUpiQr(false); }}
                     style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #16a34a', fontSize: '15px', backgroundColor: '#ffffff', color: '#0f172a' }}>
                     <option value="Cash">Cash</option>
                     <option value="UPI">UPI / GPay / PhonePe</option>
                     <option value="Cheque">Cheque</option>
                   </select>
+                  {paymentMode === 'UPI' && ownerUpiId && parseFloat(amountReceived) > 0 && (
+                    <button type="button" onClick={() => setShowUpiQr(true)}
+                      style={{ width: '100%', marginTop: '10px', padding: '14px', backgroundColor: '#6d28d9', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer', letterSpacing: '0.3px' }}>
+                      📲 Show QR Code — ₹{parseFloat(amountReceived).toLocaleString('en-IN')}
+                    </button>
+                  )}
+                  {paymentMode === 'UPI' && !ownerUpiId && (
+                    <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#f59e0b', fontWeight: '500' }}>⚠️ UPI ID not set — ask your owner to add it in Invoice Settings.</p>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button type="button" onClick={() => setMatchedOrder(null)}
@@ -880,6 +901,40 @@ function AgentPortal() {
           </div>
         )}
       </div>
+
+      {/* UPI QR Modal */}
+      {showUpiQr && ownerUpiId && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', padding: '28px 24px', width: '100%', maxWidth: '340px', textAlign: 'center', boxShadow: '0 24px 60px rgba(0,0,0,0.4)' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Scan to Pay</p>
+              <p style={{ margin: '0', fontSize: '22px', fontWeight: 'bold', color: '#6d28d9' }}>₹{parseFloat(amountReceived).toLocaleString('en-IN')}</p>
+              {matchedOrder && <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>{matchedOrder.bill_number}</p>}
+            </div>
+            <div style={{ backgroundColor: '#f8fafc', borderRadius: '12px', padding: '16px', display: 'inline-block', marginBottom: '16px' }}>
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(`upi://pay?pa=${ownerUpiId}&pn=${encodeURIComponent(ownerCompanyName)}&am=${parseFloat(amountReceived).toFixed(2)}&cu=INR&tn=${matchedOrder?.bill_number || 'Payment'}`)}`}
+                alt="UPI QR Code"
+                width={220}
+                height={220}
+                style={{ display: 'block', borderRadius: '4px' }}
+              />
+            </div>
+            <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#475569' }}>UPI ID: <strong style={{ color: '#0f172a' }}>{ownerUpiId}</strong></p>
+            <p style={{ margin: '0 0 20px', fontSize: '12px', color: '#94a3b8' }}>Works with GPay, PhonePe, Paytm, BHIM</p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="button" onClick={() => setShowUpiQr(false)}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                ← Back
+              </button>
+              <button type="button" onClick={() => { setShowUpiQr(false); }}
+                style={{ flex: 2, padding: '12px', backgroundColor: '#16a34a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}>
+                ✓ Payment Received
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast notifications */}
       {toasts.length > 0 && (

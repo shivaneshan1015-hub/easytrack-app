@@ -173,6 +173,7 @@ function OwnerDashboard() {
     address: 'Madurai, Tamil Nadu, India',
     phone: '',
     gst_number: '',
+    upi_id: '',
     logo_url: '',
     template_mode: 'custom'
   });
@@ -1992,6 +1993,16 @@ function OwnerDashboard() {
                             placeholder="33XXXXX1234X1ZX"
                             style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
                         </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>UPI ID <span style={{ fontWeight: 'normal', color: '#64748b' }}>(for QR payments)</span></label>
+                        <input type="text" value={invoiceSettings.upi_id || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, upi_id: e.target.value })}
+                          placeholder="e.g. 9876543210@okicici or name@upi"
+                          style={{ width: '100%', padding: '10px 14px', border: `1.5px solid ${invoiceSettings.upi_id ? '#16a34a' : '#cbd5e1'}`, borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
+                        {invoiceSettings.upi_id && (
+                          <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#16a34a' }}>✅ Agents will see a UPI QR code when collecting payments</p>
+                        )}
                       </div>
                     </div>
                   </div>
