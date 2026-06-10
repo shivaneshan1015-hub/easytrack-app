@@ -74,6 +74,9 @@ function AgentPortal() {
   const [shopStatement, setShopStatement] = useState([]);
   const [showShopStatement, setShowShopStatement] = useState(false);
 
+  // Post-payment WhatsApp receipt
+  const [lastPayment, setLastPayment] = useState(null);
+
   // Shop visit check-ins
   const [checkInOutcome, setCheckInOutcome] = useState('visited');
   const [checkInNote, setCheckInNote] = useState('');
@@ -93,6 +96,13 @@ function AgentPortal() {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  };
+
+  const waLink = (phone, message) => {
+    if (!phone) return null;
+    let n = phone.replace(/[\s\-\(\)\+]/g, '');
+    if (n.length === 10) n = '91' + n;
+    return `https://wa.me/${n}?text=${encodeURIComponent(message)}`;
   };
 
   const generateFreshBillTag = () => {
@@ -269,7 +279,7 @@ function AgentPortal() {
   async function loadInitialData() {
     const { data: empData } = await supabase.from('employees').select('name');
     if (empData) setEmployees(empData);
-    const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude');
+    const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude, phone_number');
     if (shopData) setShops(shopData);
     const { data: prodData } = await supabase.from('products').select('id, name, unit_price').eq('is_active', true);
     if (prodData) setProductCatalog(prodData);
@@ -440,6 +450,7 @@ function AgentPortal() {
     setReturnItems([]);
     setShopStatement([]);
     setShowShopStatement(false);
+    setLastPayment(null);
     setIsLoadingBills(true);
 
     const [pendingRes, deliveredRes, stmtRes] = await Promise.all([
@@ -636,6 +647,13 @@ function AgentPortal() {
 
       if (error) { alert('Update failed: ' + error.message); return; }
       addToast(`✅ Collected ₹${newCashInput.toLocaleString('en-IN')} — Remaining: ₹${finalRemainingPending.toLocaleString('en-IN')}`);
+      setLastPayment({
+        billNumber: matchedOrder.bill_number,
+        collected: newCashInput,
+        remaining: finalRemainingPending,
+        total: parseFloat(matchedOrder.bill_amount),
+        shopPhone: selectedDeliveryShop?.phone_number,
+      });
       setMatchedOrder(null); setAmountReceived('');
       if (selectedDeliveryShop) handleDeliveryShopSelect(selectedDeliveryShop);
     } catch (err) {
@@ -958,10 +976,13 @@ function AgentPortal() {
                         {shop.address && <p style={{ margin: '0 0 2px', fontSize: '12px', color: '#64748b' }}>{shop.address}</p>}
                         {shop.phone_number && <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>📞 {shop.phone_number}</p>}
                       </div>
-                      {shop.latitude && shop.longitude
-                        ? <a href={`https://www.google.com/maps?q=${shop.latitude},${shop.longitude}`} target="_blank" rel="noopener noreferrer"
-                            style={{ padding: '6px 12px', backgroundColor: '#16a34a', color: '#ffffff', textDecoration: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', flexShrink: 0, marginLeft: '10px' }}>📍 Maps</a>
-                        : <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: '10px' }}>No GPS</span>}
+                      <div style={{ display: 'flex', gap: '6px', marginLeft: '10px', flexShrink: 0 }}>
+                        {shop.phone_number && (() => { const link = waLink(shop.phone_number, `Hi, we'll be visiting your shop today. – ${ownerCompanyName}`); return link ? <a href={link} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 10px', backgroundColor: '#25d366', color: '#ffffff', textDecoration: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>📱</a> : null; })()}
+                        {shop.latitude && shop.longitude
+                          ? <a href={`https://www.google.com/maps?q=${shop.latitude},${shop.longitude}`} target="_blank" rel="noopener noreferrer"
+                              style={{ padding: '6px 12px', backgroundColor: '#16a34a', color: '#ffffff', textDecoration: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>📍 Maps</a>
+                          : <span style={{ fontSize: '12px', color: '#94a3b8' }}>No GPS</span>}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1127,6 +1148,15 @@ function AgentPortal() {
                             <div style={{ textAlign: 'right' }}>
                               <p style={{ margin: '0', fontWeight: 'bold', fontSize: '16px', color: '#dc2626' }}>₹{parseFloat(bill.pending_amount).toLocaleString('en-IN')}</p>
                               <p style={{ margin: '0', fontSize: '11px', color: '#94a3b8' }}>{isCredit ? 'balance due' : 'pending'}</p>
+                              {isCredit && (() => {
+                                const link = waLink(selectedDeliveryShop?.phone_number, `Hi, this is a reminder for your outstanding balance of ₹${parseFloat(bill.pending_amount).toLocaleString('en-IN')} on bill ${bill.bill_number} (Total: ₹${parseFloat(bill.bill_amount).toLocaleString('en-IN')}). Please arrange payment. – ${ownerCompanyName}`);
+                                return link ? (
+                                  <a href={link} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                                    style={{ display: 'inline-block', marginTop: '4px', fontSize: '11px', color: '#25d366', fontWeight: 'bold', textDecoration: 'none' }}>
+                                    📱 Remind
+                                  </a>
+                                ) : null;
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -1274,6 +1304,33 @@ function AgentPortal() {
                 </div>
               </form>
             )}
+
+            {/* ── WHATSAPP RECEIPT ── */}
+            {lastPayment && (() => {
+              const isFullyPaid = lastPayment.remaining <= 0;
+              const msg = isFullyPaid
+                ? `Hi, bill ${lastPayment.billNumber} of ₹${lastPayment.total.toLocaleString('en-IN')} is fully settled. Thank you for your payment! – ${ownerCompanyName}`
+                : `Hi, received ₹${lastPayment.collected.toLocaleString('en-IN')} against bill ${lastPayment.billNumber}. Outstanding balance: ₹${lastPayment.remaining.toLocaleString('en-IN')}. Thank you! – ${ownerCompanyName}`;
+              const link = waLink(lastPayment.shopPhone, msg);
+              return (
+                <div style={{ marginTop: '10px', padding: '14px 16px', backgroundColor: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <div>
+                    <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '13px', color: '#15803d' }}>✅ Payment recorded</p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>{isFullyPaid ? 'Bill fully settled' : `₹${lastPayment.remaining.toLocaleString('en-IN')} still outstanding`}</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {link && (
+                      <a href={link} target="_blank" rel="noopener noreferrer"
+                        style={{ display: 'inline-block', padding: '10px 16px', backgroundColor: '#25d366', color: '#ffffff', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', textDecoration: 'none' }}>
+                        📱 Send Receipt
+                      </a>
+                    )}
+                    <button type="button" onClick={() => setLastPayment(null)}
+                      style={{ padding: '10px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>✕</button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
         ) : activeTab === 'returns' ? (

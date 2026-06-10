@@ -229,6 +229,13 @@ function OwnerDashboard() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
   };
 
+  const waLink = (phone, message) => {
+    if (!phone) return null;
+    let n = phone.replace(/[\s\-\(\)\+]/g, '');
+    if (n.length === 10) n = '91' + n;
+    return `https://wa.me/${n}?text=${encodeURIComponent(message)}`;
+  };
+
   async function loadPendingOrders() {
     setIsLoading(true);
     const { data } = await supabase.from('transactions')
@@ -1499,7 +1506,10 @@ function OwnerDashboard() {
                         <td style={{ padding: '16px', color: '#475569' }}>{order.employee_name}</td>
                         <td style={{ padding: '16px', fontWeight: 'bold', color: '#16a34a' }}>₹{order.bill_amount}</td>
                         <td style={{ padding: '16px' }}>
-                          <button onClick={() => handleReviewClick(order)} style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>Review & Edit</button>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <button onClick={() => handleReviewClick(order)} style={{ padding: '8px 14px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>Review & Edit</button>
+                            {(() => { const link = waLink(order.shops?.phone_number, `Hi ${order.shops?.name}, your order ${order.bill_number} of ₹${parseFloat(order.bill_amount).toLocaleString('en-IN')} has been received. We'll dispatch soon. – EasyTrack`); return link ? <a href={link} target="_blank" rel="noopener noreferrer" style={{ padding: '8px 12px', backgroundColor: '#25d366', color: '#fff', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px' }}>📱</a> : null; })()}
+                          </div>
                         </td>
                       </tr>
                     ))}</tbody>
@@ -1638,11 +1648,14 @@ function OwnerDashboard() {
                                 </div>
                               </div>
                             ) : (
-                              <button
-                                onClick={() => setCollectForm({ orderId: order.id, amount: '', mode: 'Cash' })}
-                                style={{ padding: '6px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
-                                💰 Collect
-                              </button>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <button
+                                  onClick={() => setCollectForm({ orderId: order.id, amount: '', mode: 'Cash' })}
+                                  style={{ padding: '6px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+                                  💰 Collect
+                                </button>
+                                {(() => { const link = waLink(order.shops?.phone_number, `Hi ${order.shops?.name}, a friendly reminder for your outstanding balance of ₹${parseFloat(order.pending_amount || 0).toLocaleString('en-IN')} on bill ${order.bill_number}. Please arrange payment at your convenience. – EasyTrack`); return link ? <a href={link} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 12px', backgroundColor: '#25d366', color: '#fff', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', textAlign: 'center' }}>📱 Remind</a> : null; })()}
+                              </div>
                             )
                           )}
                           {order.status === 'approved' && (
