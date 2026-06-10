@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth, withAuth } from '../hooks/useAuth';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import * as XLSX from 'xlsx';
 
 // Custom tooltip for charts
 const ChartTooltip = ({ active, payload, label }) => {
@@ -725,6 +726,147 @@ function OwnerDashboard() {
     loadMasterProducts();
   };
 
+  function exportLedgerExcel() {
+    const rows = historyOrders.map(o => ({
+      'Bill No': o.bill_number || '',
+      'Shop': o.shops?.name || '',
+      'Agent': o.employee_name || '',
+      'Date': o.delivered_at
+        ? new Date(o.delivered_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : new Date(o.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      'Bill Amount (INR)': parseFloat(o.bill_amount || 0),
+      'Collected (INR)': parseFloat(o.amount_received || 0),
+      'Pending (INR)': parseFloat(o.pending_amount || 0),
+      'Payment Mode': o.payment_mode || '',
+      'Status': o.status === 'delivered' ? (parseFloat(o.pending_amount) <= 0 ? 'Settled' : 'Credit') : 'En Route',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [12, 20, 16, 14, 18, 16, 14, 14, 10].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dispatched Ledger');
+    XLSX.writeFile(wb, `EasyTrack_Ledger_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
+  function exportFinanceExcel() {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Summary
+    const summaryRows = [
+      ['Metric', 'Value (INR)'],
+      ['Total Sales', financials.totalSales],
+      ['Total Collected', financials.totalCollected],
+      ['Total Outstanding', financials.totalOutstanding],
+      ['Cash Collected', financials.cashCollected],
+      ['UPI Collected', financials.upiCollected],
+      ['Cheque Collected', financials.chequeCollected],
+      ['Collection Efficiency %', financials.totalSales > 0 ? Math.round((financials.totalCollected / financials.totalSales) * 100) : 0],
+      ['Aging 0-7 days', financials.aging07],
+      ['Aging 8-15 days', financials.aging815],
+      ['Aging 16-30 days', financials.aging1630],
+      ['Aging 30+ days', financials.aging30plus],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary['!cols'] = [{ wch: 28 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+    // Sheet 2: Agent Rankings
+    const agentRows = [['Agent', 'Bills', 'Sales (INR)', 'Collected (INR)', 'Efficiency %']];
+    Object.entries(financials.agentRankings || {})
+      .sort((a, b) => b[1].sales - a[1].sales)
+      .forEach(([name, d]) => {
+        agentRows.push([name, d.count, d.sales, d.collected, d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0]);
+      });
+    const wsAgents = XLSX.utils.aoa_to_sheet(agentRows);
+    wsAgents['!cols'] = [{ wch: 20 }, { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsAgents, 'Agent Rankings');
+
+    // Sheet 3: Pending Bills
+    const pendingRows = [['Bill No', 'Shop', 'Date', 'Bill Amount (INR)', 'Pending (INR)']];
+    (financials.shopPendingBills || []).forEach(b => {
+      pendingRows.push([b.billNumber, b.shopName, b.date, b.total, b.pending]);
+    });
+    const wsPending = XLSX.utils.aoa_to_sheet(pendingRows);
+    wsPending['!cols'] = [{ wch: 16 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsPending, 'Pending Bills');
+
+    const label = dateRange === 'today' ? 'Today' : dateRange === 'week' ? 'ThisWeek' : dateRange === 'month' ? 'ThisMonth' : 'Custom';
+    XLSX.writeFile(wb, `EasyTrack_Finance_${label}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
+  function exportLedgerPdf() {
+    const rows = historyOrders.map((o, i) => {
+      const settled = o.status === 'delivered' && parseFloat(o.pending_amount) <= 0;
+      const credit = o.status === 'delivered' && parseFloat(o.pending_amount) > 0;
+      const statusLabel = settled ? 'Settled' : credit ? 'Credit' : 'En Route';
+      const statusColor = settled ? '#15803d' : credit ? '#991b1b' : '#854d0e';
+      const date = o.delivered_at
+        ? new Date(o.delivered_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : new Date(o.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      return `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
+        <td>${o.bill_number || ''}</td>
+        <td>${o.shops?.name || ''}</td>
+        <td>${o.employee_name || ''}</td>
+        <td>${date}</td>
+        <td style="text-align:right">₹${parseFloat(o.bill_amount || 0).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;color:#16a34a">₹${parseFloat(o.amount_received || 0).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;color:#dc2626">₹${parseFloat(o.pending_amount || 0).toLocaleString('en-IN')}</td>
+        <td>${o.payment_mode || ''}</td>
+        <td style="color:${statusColor};font-weight:bold">${statusLabel}</td>
+      </tr>`;
+    }).join('');
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>EasyTrack Ledger</title>
+    <style>body{font-family:Arial,sans-serif;padding:20px;color:#0f172a}h1{font-size:18px;margin-bottom:4px}p.sub{font-size:12px;color:#64748b;margin:0 0 16px}
+    table{width:100%;border-collapse:collapse;font-size:12px}th{background:#0f172a;color:#fff;padding:8px 10px;text-align:left}td{padding:7px 10px;border-bottom:1px solid #e2e8f0}
+    @media print{body{padding:10px}.no-print{display:none}}</style></head><body>
+    <h1>EasyTrack — Dispatched Ledger</h1>
+    <p class="sub">Generated: ${new Date().toLocaleString('en-IN')} &nbsp;|&nbsp; ${historyOrders.length} records</p>
+    <table><thead><tr><th>Bill No</th><th>Shop</th><th>Agent</th><th>Date</th><th>Amount</th><th>Collected</th><th>Pending</th><th>Mode</th><th>Status</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>window.print()</script></body></html>`);
+    win.document.close();
+  }
+
+  function exportFinancePdf() {
+    const agentRows = Object.entries(financials.agentRankings || {})
+      .sort((a, b) => b[1].sales - a[1].sales)
+      .map(([name, d], i) => `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
+        <td>${name}</td><td style="text-align:center">${d.count}</td>
+        <td style="text-align:right">₹${d.sales.toLocaleString('en-IN')}</td>
+        <td style="text-align:right;color:#16a34a">₹${d.collected.toLocaleString('en-IN')}</td>
+        <td style="text-align:center">${d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0}%</td>
+      </tr>`).join('');
+    const pendingRows = (financials.shopPendingBills || [])
+      .map((b, i) => `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
+        <td>${b.billNumber}</td><td>${b.shopName}</td><td>${b.date}</td>
+        <td style="text-align:right">₹${parseFloat(b.total).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;color:#dc2626">₹${parseFloat(b.pending).toLocaleString('en-IN')}</td>
+      </tr>`).join('');
+    const label = dateRange === 'today' ? 'Today' : dateRange === 'week' ? 'This Week' : dateRange === 'month' ? 'This Month' : 'Custom Range';
+    const eff = financials.totalSales > 0 ? Math.round((financials.totalCollected / financials.totalSales) * 100) : 0;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><title>EasyTrack Finance Report</title>
+    <style>body{font-family:Arial,sans-serif;padding:20px;color:#0f172a}h1{font-size:18px;margin-bottom:4px}h2{font-size:14px;margin:24px 0 10px;border-bottom:2px solid #0f172a;padding-bottom:6px}
+    p.sub{font-size:12px;color:#64748b;margin:0 0 16px}.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}.card{border:1px solid #e2e8f0;border-radius:6px;padding:12px 16px;min-width:140px}
+    .card .label{font-size:10px;color:#64748b;font-weight:bold;text-transform:uppercase}.card .val{font-size:20px;font-weight:bold;margin-top:4px}
+    table{width:100%;border-collapse:collapse;font-size:12px}th{background:#0f172a;color:#fff;padding:8px 10px;text-align:left}td{padding:7px 10px;border-bottom:1px solid #e2e8f0}
+    @media print{body{padding:10px}}</style></head><body>
+    <h1>EasyTrack — Financial Report</h1>
+    <p class="sub">Period: ${label} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</p>
+    <div class="cards">
+      <div class="card"><div class="label">Total Sales</div><div class="val">₹${financials.totalSales.toLocaleString('en-IN')}</div></div>
+      <div class="card"><div class="label" style="color:#16a34a">Collected</div><div class="val" style="color:#16a34a">₹${financials.totalCollected.toLocaleString('en-IN')}</div></div>
+      <div class="card"><div class="label" style="color:#dc2626">Outstanding</div><div class="val" style="color:#dc2626">₹${financials.totalOutstanding.toLocaleString('en-IN')}</div></div>
+      <div class="card" style="background:#0f172a"><div class="label" style="color:#94a3b8">Efficiency</div><div class="val" style="color:#4ade80">${eff}%</div></div>
+    </div>
+    <h2>Agent Rankings</h2>
+    <table><thead><tr><th>Agent</th><th>Bills</th><th>Sales</th><th>Collected</th><th>Efficiency</th></tr></thead><tbody>${agentRows || '<tr><td colspan="5" style="color:#64748b;text-align:center">No data</td></tr>'}</tbody></table>
+    <h2>Pending Bills (${(financials.shopPendingBills || []).length})</h2>
+    <table><thead><tr><th>Bill No</th><th>Shop</th><th>Date</th><th>Total</th><th>Pending</th></tr></thead><tbody>${pendingRows || '<tr><td colspan="5" style="color:#64748b;text-align:center">No pending bills</td></tr>'}</tbody></table>
+    <script>window.onload=()=>window.print()</script></body></html>`);
+    win.document.close();
+  }
+
   const handleFinalizeDelivery = async (transactionId, totalBill, amountReceived, paymentMode) => {
     if (isNaN(amountReceived) || amountReceived < 0) return alert('Invalid amount.');
     setIsUpdating(true);
@@ -1054,6 +1196,17 @@ function OwnerDashboard() {
               )
 
             ) : activeTab === 'history' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button onClick={exportLedgerExcel}
+                    style={{ padding: '8px 16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                    ⬇ Excel
+                  </button>
+                  <button onClick={exportLedgerPdf}
+                    style={{ padding: '8px 16px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                    🖨 PDF
+                  </button>
+                </div>
               <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
@@ -1144,12 +1297,14 @@ function OwnerDashboard() {
                   })}</tbody>
                 </table>
               </div>
+              </div>
 
             ) : activeTab === 'finance' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
                 {/* ── DATE FILTER ── */}
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                   {['today', 'week', 'month', 'custom'].map(range => (
                     <button key={range} onClick={() => {
                       setDateRange(range);
@@ -1170,6 +1325,17 @@ function OwnerDashboard() {
                         style={{ padding: '7px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>Apply</button>
                     </div>
                   )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={exportFinanceExcel}
+                      style={{ padding: '8px 16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                      ⬇ Excel
+                    </button>
+                    <button onClick={exportFinancePdf}
+                      style={{ padding: '8px 16px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                      🖨 PDF
+                    </button>
+                  </div>
                 </div>
 
                 {/* ── SUMMARY CARDS ── */}
