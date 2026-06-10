@@ -66,6 +66,10 @@ function AgentPortal() {
   const [myDeliveredBills, setMyDeliveredBills] = useState([]);
   const [myReturns, setMyReturns] = useState([]);
 
+  // Attendance
+  const [todayAttendance, setTodayAttendance] = useState(null);
+  const [isMarkingAttendance, setIsMarkingAttendance] = useState(false);
+
   // Shop visit check-ins
   const [checkInOutcome, setCheckInOutcome] = useState('visited');
   const [checkInNote, setCheckInNote] = useState('');
@@ -134,6 +138,29 @@ function AgentPortal() {
     const collected = (txns || []).reduce((s, t) => s + parseFloat(t.amount_received || 0), 0);
     setMyMonthSales(sales);
     setMyMonthCollected(collected);
+  }
+
+  async function loadTodayAttendance() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const { data } = await supabase.from('attendance')
+      .select('*').eq('agent_name', agentName).eq('date', today).maybeSingle();
+    setTodayAttendance(data || null);
+  }
+
+  async function handleMarkPresent() {
+    const agentName = profile?.full_name || selectedEmployee;
+    if (!agentName) return;
+    setIsMarkingAttendance(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const { data, error } = await supabase.from('attendance')
+      .upsert([{ agent_name: agentName, date: today }], { onConflict: 'agent_name,date' })
+      .select().single();
+    setIsMarkingAttendance(false);
+    if (error) return alert('Failed: ' + error.message);
+    setTodayAttendance(data);
+    addToast('✅ Attendance marked — Present today!');
   }
 
   async function loadTodayCheckIns() {
@@ -274,7 +301,7 @@ function AgentPortal() {
 
   useEffect(() => {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
-    if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); loadTodayCheckIns(); }
+    if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); loadTodayCheckIns(); loadTodayAttendance(); }
     if (activeTab === 'returns') loadMyReturnData();
     if (activeTab === 'expenses') loadMyExpenses();
   }, [activeTab, profile, selectedEmployee]);
@@ -830,6 +857,29 @@ function AgentPortal() {
         ) : activeTab === 'delivery' ? (
           /* ── PHASE 2: DELIVER & COLLECT ── */
           <div>
+
+            {/* ── ATTENDANCE BANNER ── */}
+            {todayAttendance ? (
+              <div style={{ marginBottom: '14px', padding: '10px 16px', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '18px' }}>✅</span>
+                <div>
+                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 'bold', color: '#15803d' }}>Present today</p>
+                  <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>Marked at {new Date(todayAttendance.marked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginBottom: '14px', padding: '14px 16px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '2px solid #bfdbfe', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <span style={{ fontSize: '22px' }}>🟢</span>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#1e40af' }}>Start your day</p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#3b82f6' }}>Tap to mark yourself present</p>
+                </div>
+                <button type="button" onClick={handleMarkPresent} disabled={isMarkingAttendance}
+                  style={{ padding: '10px 18px', backgroundColor: isMarkingAttendance ? '#94a3b8' : '#2563eb', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: isMarkingAttendance ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {isMarkingAttendance ? '...' : '✅ Mark Present'}
+                </button>
+              </div>
+            )}
 
             {/* ── PERFORMANCE SUMMARY ── */}
             {periodStats && (() => {

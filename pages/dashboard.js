@@ -159,6 +159,9 @@ function OwnerDashboard() {
   const [expenseAgentFilter, setExpenseAgentFilter] = useState('all');
   const [expenseStatusFilter, setExpenseStatusFilter] = useState('all');
   const [shopVisits, setShopVisits] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [attendanceLeaves, setAttendanceLeaves] = useState([]);
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
   const [shopDirSearch, setShopDirSearch] = useState('');
   const [ledgerSearch, setLedgerSearch] = useState('');
@@ -549,6 +552,15 @@ function OwnerDashboard() {
     if (data) setReturnsList(data);
   }
 
+  async function loadAttendance(date) {
+    const [{ data: attData }, { data: leaveData }] = await Promise.all([
+      supabase.from('attendance').select('agent_name, marked_at, note').eq('date', date),
+      supabase.from('leaves').select('agent_name').eq('leave_date', date),
+    ]);
+    setAttendance(attData || []);
+    setAttendanceLeaves(leaveData || []);
+  }
+
   async function loadShopVisits() {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const { data } = await supabase.from('shop_visits')
@@ -667,7 +679,7 @@ function OwnerDashboard() {
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -2700,6 +2712,66 @@ function OwnerDashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* ── ATTENDANCE ── */}
+                {(() => {
+                  const presentSet = new Set(attendance.map(a => a.agent_name));
+                  const leaveSet = new Set(attendanceLeaves.map(l => l.agent_name));
+                  const presentCount = agentsList.filter(a => presentSet.has(a.full_name)).length;
+                  const leaveCount = agentsList.filter(a => leaveSet.has(a.full_name)).length;
+                  const absentCount = agentsList.length - presentCount - leaveCount;
+                  const isToday = attendanceDate === new Date().toISOString().slice(0, 10);
+                  return (
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                        <div>
+                          <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📋 Attendance</h3>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{presentCount} of {agentsList.length} present{leaveCount > 0 ? ` · ${leaveCount} on leave` : ''}</p>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input type="date" value={attendanceDate} max={new Date().toISOString().slice(0,10)}
+                            onChange={e => { setAttendanceDate(e.target.value); loadAttendance(e.target.value); }}
+                            style={{ padding: '7px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }} />
+                          {isToday && <span style={{ fontSize: '11px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold' }}>Today</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        {[
+                          { label: '✅ Present', value: presentCount, color: '#16a34a', bg: '#dcfce7' },
+                          { label: '🏖️ On Leave', value: leaveCount, color: '#d97706', bg: '#fef9c3' },
+                          { label: '✗ Absent', value: absentCount, color: '#dc2626', bg: '#fee2e2' },
+                        ].map(s => (
+                          <div key={s.label} style={{ flex: 1, minWidth: '90px', padding: '12px', backgroundColor: s.bg, borderRadius: '8px', textAlign: 'center' }}>
+                            <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#64748b' }}>{s.label}</p>
+                            <strong style={{ fontSize: '22px', color: s.color }}>{s.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                      {agentsList.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '13px' }}>No agents found.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {agentsList.map(agent => {
+                            const rec = attendance.find(a => a.agent_name === agent.full_name);
+                            const onLeave = leaveSet.has(agent.full_name);
+                            const isPresent = !!rec;
+                            return (
+                              <div key={agent.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', backgroundColor: isPresent ? '#f0fdf4' : onLeave ? '#fefce8' : '#fef2f2', border: `1px solid ${isPresent ? '#bbf7d0' : onLeave ? '#fde68a' : '#fecaca'}` }}>
+                                <span style={{ fontWeight: '600', fontSize: '14px' }}>{agent.full_name}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  {rec && <span style={{ fontSize: '12px', color: '#64748b' }}>{new Date(rec.marked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+                                  <span style={{ padding: '3px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: isPresent ? '#dcfce7' : onLeave ? '#fef9c3' : '#fee2e2', color: isPresent ? '#15803d' : onLeave ? '#92400e' : '#dc2626' }}>
+                                    {isPresent ? '✅ Present' : onLeave ? '🏖️ On Leave' : '✗ Absent'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Agent Performance Summary */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
