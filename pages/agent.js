@@ -66,6 +66,14 @@ function AgentPortal() {
   const [myDeliveredBills, setMyDeliveredBills] = useState([]);
   const [myReturns, setMyReturns] = useState([]);
 
+  // Expenses
+  const [myExpenses, setMyExpenses] = useState([]);
+  const [expenseCategory, setExpenseCategory] = useState('Travel');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseNote, setExpenseNote] = useState('');
+  const [expenseDate, setExpenseDate] = useState('');
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
     const id = Date.now();
@@ -120,6 +128,40 @@ function AgentPortal() {
     const collected = (txns || []).reduce((s, t) => s + parseFloat(t.amount_received || 0), 0);
     setMyMonthSales(sales);
     setMyMonthCollected(collected);
+  }
+
+  async function loadMyExpenses() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const { data } = await supabase.from('agent_expenses')
+      .select('*')
+      .eq('agent_name', agentName)
+      .order('expense_date', { ascending: false });
+    if (data) setMyExpenses(data);
+  }
+
+  async function handleSubmitExpense(e) {
+    e.preventDefault();
+    const amt = parseFloat(expenseAmount);
+    if (isNaN(amt) || amt <= 0) return alert('Enter a valid amount.');
+    if (!expenseDate) return alert('Select an expense date.');
+    setIsSubmittingExpense(true);
+    const { error } = await supabase.from('agent_expenses').insert([{
+      agent_name: profile?.full_name || selectedEmployee,
+      category: expenseCategory,
+      amount: amt,
+      note: expenseNote.trim() || null,
+      expense_date: expenseDate,
+      status: 'pending',
+    }]);
+    setIsSubmittingExpense(false);
+    if (error) return alert('Failed to submit: ' + error.message);
+    addToast(`✅ Expense submitted — ₹${amt.toLocaleString('en-IN')} (${expenseCategory})`);
+    setExpenseAmount('');
+    setExpenseNote('');
+    setExpenseDate('');
+    setExpenseCategory('Travel');
+    loadMyExpenses();
   }
 
   async function loadMyReturnData() {
@@ -185,6 +227,7 @@ function AgentPortal() {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
     if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); }
     if (activeTab === 'returns') loadMyReturnData();
+    if (activeTab === 'expenses') loadMyExpenses();
   }, [activeTab, profile, selectedEmployee]);
 
   async function loadTodaysBeat() {
@@ -610,6 +653,7 @@ function AgentPortal() {
           <button type="button" onClick={() => setActiveTab('booking')} style={tabStyle('booking')}>📝 Book Order</button>
           <button type="button" onClick={() => setActiveTab('delivery')} style={tabStyle('delivery')}>📦 Deliver & Collect</button>
           <button type="button" onClick={() => setActiveTab('returns')} style={tabStyle('returns')}>↩ Returns</button>
+          <button type="button" onClick={() => setActiveTab('expenses')} style={tabStyle('expenses')}>💰 Expenses</button>
           <button type="button" onClick={() => setActiveTab('leave')} style={tabStyle('leave')}>🏖️ Leave</button>
         </div>
 
@@ -1130,6 +1174,83 @@ function AgentPortal() {
             </div>
           </div>
 
+        ) : activeTab === 'expenses' ? (
+          /* ── EXPENSES TAB ── */
+          <div>
+            {/* Submit Expense */}
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 'bold' }}>💰 Log an Expense</h3>
+              <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Submit field expenses for owner approval.</p>
+              <form onSubmit={handleSubmitExpense} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Category</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {['Travel', 'Food', 'Phone', 'Accommodation', 'Entertainment', 'Other'].map(cat => (
+                      <button key={cat} type="button" onClick={() => setExpenseCategory(cat)}
+                        style={{ padding: '10px 6px', borderRadius: '8px', border: `2px solid ${expenseCategory === cat ? '#2563eb' : '#e2e8f0'}`, backgroundColor: expenseCategory === cat ? '#eff6ff' : '#f8fafc', color: expenseCategory === cat ? '#2563eb' : '#475569', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+                        {cat === 'Travel' ? '🚗' : cat === 'Food' ? '🍱' : cat === 'Phone' ? '📱' : cat === 'Accommodation' ? '🏨' : cat === 'Entertainment' ? '🎉' : '📦'} {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Amount (₹)</label>
+                    <input type="number" min="1" step="0.01" placeholder="0.00" value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)}
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '15px', boxSizing: 'border-box', color: '#0f172a' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Date</label>
+                    <input type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)}
+                      max={new Date().toISOString().slice(0, 10)}
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '15px', boxSizing: 'border-box', color: '#0f172a' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Note (optional)</label>
+                  <input type="text" placeholder="e.g. Petrol for route, Client lunch" value={expenseNote} onChange={e => setExpenseNote(e.target.value)}
+                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '15px', boxSizing: 'border-box', color: '#0f172a' }} />
+                </div>
+                <button type="submit" disabled={isSubmittingExpense}
+                  style={{ padding: '14px', backgroundColor: isSubmittingExpense ? '#94a3b8' : '#2563eb', color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: isSubmittingExpense ? 'not-allowed' : 'pointer' }}>
+                  {isSubmittingExpense ? 'Submitting...' : '✅ Submit Expense'}
+                </button>
+              </form>
+            </div>
+
+            {/* My Expense History */}
+            <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: '16px', fontWeight: 'bold' }}>📋 My Expense History</h3>
+              {myExpenses.length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>No expenses submitted yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {myExpenses.map(exp => {
+                    const isPending = exp.status === 'pending';
+                    const isApproved = exp.status === 'approved';
+                    return (
+                      <div key={exp.id} style={{ padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: `1px solid ${isApproved ? '#bbf7d0' : isPending ? '#e2e8f0' : '#fecaca'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                              <span style={{ fontWeight: 'bold', fontSize: '14px' }}>₹{parseFloat(exp.amount).toLocaleString('en-IN')}</span>
+                              <span style={{ fontSize: '12px', backgroundColor: '#f1f5f9', color: '#475569', padding: '1px 8px', borderRadius: '10px' }}>{exp.category}</span>
+                            </div>
+                            {exp.note && <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{exp.note}</p>}
+                            <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#94a3b8' }}>{new Date(exp.expense_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                          </div>
+                          <span style={{ flexShrink: 0, padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
+                            {isApproved ? '✓ Approved' : isPending ? '⏳ Pending' : '✕ Rejected'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
         ) : (
           /* ── LEAVE TAB ── */
           <div>
@@ -1243,6 +1364,7 @@ function AgentPortal() {
           { tab: 'booking',  icon: '📝', label: 'Book Order' },
           { tab: 'delivery', icon: '📦', label: 'Deliver'    },
           { tab: 'returns',  icon: '↩',  label: 'Returns'    },
+          { tab: 'expenses', icon: '💰', label: 'Expenses'   },
           { tab: 'leave',    icon: '🏖️', label: 'Leave'      },
         ].map(({ tab, icon, label }) => (
           <button key={tab} type="button" onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', color: activeTab === tab ? '#2563eb' : '#94a3b8', borderTop: `2px solid ${activeTab === tab ? '#2563eb' : 'transparent'}`, marginTop: '-2px' }}>

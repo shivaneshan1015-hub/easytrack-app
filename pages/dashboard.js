@@ -155,6 +155,9 @@ function OwnerDashboard() {
   const [customTo, setCustomTo] = useState('');
   const [chartType, setChartType] = useState('bar');
   const [returnsList, setReturnsList] = useState([]);
+  const [allExpenses, setAllExpenses] = useState([]);
+  const [expenseAgentFilter, setExpenseAgentFilter] = useState('all');
+  const [expenseStatusFilter, setExpenseStatusFilter] = useState('all');
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
   const [shopDirSearch, setShopDirSearch] = useState('');
   const [ledgerSearch, setLedgerSearch] = useState('');
@@ -545,6 +548,20 @@ function OwnerDashboard() {
     if (data) setReturnsList(data);
   }
 
+  async function loadExpenses() {
+    const { data } = await supabase.from('agent_expenses')
+      .select('*')
+      .order('expense_date', { ascending: false });
+    if (data) setAllExpenses(data);
+  }
+
+  async function handleExpenseAction(id, newStatus) {
+    const { error } = await supabase.from('agent_expenses').update({ status: newStatus }).eq('id', id);
+    if (error) return alert('Failed: ' + error.message);
+    setAllExpenses(prev => prev.map(e => e.id === id ? { ...e, status: newStatus } : e));
+    addToast(`✅ Expense ${newStatus}`);
+  }
+
   async function loadShops() {
     setIsLoading(true);
     const [{ data: shopsData }, { data: openTx }, { data: partialTx }] = await Promise.all([
@@ -637,7 +654,7 @@ function OwnerDashboard() {
     setCollectForm(null);
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); loadCreditAlerts(); }
     else if (activeTab === 'history') loadHistoryLedger();
-    else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); }
+    else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
     else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); }
@@ -1911,6 +1928,101 @@ function OwnerDashboard() {
                   </table>
                   </div>
                 </div>
+
+                {/* ── AGENT EXPENSES ── */}
+                {(() => {
+                  const agentNames = [...new Set(allExpenses.map(e => e.agent_name))].sort();
+                  const filtered = allExpenses.filter(e =>
+                    (expenseAgentFilter === 'all' || e.agent_name === expenseAgentFilter) &&
+                    (expenseStatusFilter === 'all' || e.status === expenseStatusFilter)
+                  );
+                  const pendingTotal = allExpenses.filter(e => e.status === 'pending').reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                  const approvedTotal = allExpenses.filter(e => e.status === 'approved').reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+                  return (
+                    <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold' }}>💰 Agent Expenses</h3>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <select value={expenseAgentFilter} onChange={e => setExpenseAgentFilter(e.target.value)}
+                            style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
+                            <option value="all">All Agents</option>
+                            {agentNames.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                          <select value={expenseStatusFilter} onChange={e => setExpenseStatusFilter(e.target.value)}
+                            style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
+                            <option value="all">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        {[
+                          { label: '⏳ Pending', value: pendingTotal, color: '#d97706', bg: '#fef9c3' },
+                          { label: '✓ Approved', value: approvedTotal, color: '#16a34a', bg: '#dcfce7' },
+                          { label: '📦 Total Records', value: allExpenses.length, color: '#64748b', bg: '#f1f5f9', isCount: true },
+                        ].map(item => (
+                          <div key={item.label} style={{ flex: 1, minWidth: '120px', padding: '14px', backgroundColor: item.bg, borderRadius: '8px' }}>
+                            <span style={{ fontSize: '12px', color: '#64748b' }}>{item.label}</span>
+                            <strong style={{ display: 'block', fontSize: '18px', color: item.color, marginTop: '4px' }}>
+                              {item.isCount ? item.value : `₹${item.value.toLocaleString('en-IN')}`}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                      {filtered.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No expenses found.</p>
+                      ) : (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Date</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Category</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Note</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Amount</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Status</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Action</th>
+                            </tr></thead>
+                            <tbody>{filtered.map(exp => {
+                              const isPending = exp.status === 'pending';
+                              const isApproved = exp.status === 'approved';
+                              return (
+                                <tr key={exp.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '10px 12px', color: '#64748b' }}>{new Date(exp.expense_date).toLocaleDateString('en-IN')}</td>
+                                  <td style={{ padding: '10px 12px', fontWeight: '500' }}>{exp.agent_name}</td>
+                                  <td style={{ padding: '10px 12px', color: '#475569' }}>{exp.category}</td>
+                                  <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.note || '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 'bold', color: '#0f172a' }}>₹{parseFloat(exp.amount).toLocaleString('en-IN')}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
+                                      {isApproved ? '✓ Approved' : isPending ? '⏳ Pending' : '✕ Rejected'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                    {isPending && (
+                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                        <button onClick={() => handleExpenseAction(exp.id, 'approved')}
+                                          style={{ padding: '5px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✓ Approve</button>
+                                        <button onClick={() => handleExpenseAction(exp.id, 'rejected')}
+                                          style={{ padding: '5px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✕ Reject</button>
+                                      </div>
+                                    )}
+                                    {!isPending && (
+                                      <button onClick={() => handleExpenseAction(exp.id, 'pending')}
+                                        style={{ padding: '5px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>Undo</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}</tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* ── RETURNS & DAMAGES ── */}
                 <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
