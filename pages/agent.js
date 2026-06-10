@@ -58,6 +58,9 @@ function AgentPortal() {
   const [ownerUpiId, setOwnerUpiId] = useState('');
   const [ownerCompanyName, setOwnerCompanyName] = useState('EasyTrack');
   const [showUpiQr, setShowUpiQr] = useState(false);
+  const [myTarget, setMyTarget] = useState(null);
+  const [myMonthSales, setMyMonthSales] = useState(0);
+  const [myMonthCollected, setMyMonthCollected] = useState(0);
 
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
@@ -71,6 +74,28 @@ function AgentPortal() {
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setBillNumber(`ET-2026-${timestamp}-${randomSuffix}`);
   };
+
+  async function loadMyTarget() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const month = new Date().toISOString().slice(0, 7);
+    const { data: tgt } = await supabase.from('agent_targets')
+      .select('sales_target, collection_target')
+      .eq('agent_name', agentName)
+      .eq('month', month)
+      .maybeSingle();
+    setMyTarget(tgt || null);
+    const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const { data: txns } = await supabase.from('transactions')
+      .select('bill_amount, amount_received')
+      .eq('employee_name', agentName)
+      .gte('created_at', firstOfMonth)
+      .in('status', ['approved', 'delivered']);
+    const sales = (txns || []).reduce((s, t) => s + parseFloat(t.bill_amount || 0), 0);
+    const collected = (txns || []).reduce((s, t) => s + parseFloat(t.amount_received || 0), 0);
+    setMyMonthSales(sales);
+    setMyMonthCollected(collected);
+  }
 
   async function loadInitialData() {
     const { data: empData } = await supabase.from('employees').select('name');
@@ -106,6 +131,7 @@ function AgentPortal() {
     if (profile?.role === 'agent' && profile?.full_name) {
       setSelectedEmployee(profile.full_name);
     }
+    loadMyTarget();
   }, [profile]);
 
   useEffect(() => {
@@ -539,6 +565,41 @@ function AgentPortal() {
         {/* ── PHASE 1: BOOK ORDER ── */}
         {activeTab === 'booking' ? (
           <form onSubmit={handleSubmitOrder}>
+            {myTarget && (() => {
+              const salesPct = myTarget.sales_target > 0 ? Math.min(100, Math.round(myMonthSales / myTarget.sales_target * 100)) : 0;
+              const collPct = myTarget.collection_target > 0 ? Math.min(100, Math.round(myMonthCollected / myTarget.collection_target * 100)) : 0;
+              return (
+                <div style={{ marginBottom: '20px', backgroundColor: '#eff6ff', borderRadius: '8px', padding: '14px', border: '1px solid #bfdbfe' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: 'bold', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    🎯 {new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} Targets
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {myTarget.sales_target > 0 && (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px' }}>
+                          <span style={{ color: '#475569' }}>Sales · ₹{myMonthSales.toLocaleString('en-IN')} / ₹{Number(myTarget.sales_target).toLocaleString('en-IN')}</span>
+                          <span style={{ fontWeight: 'bold', color: salesPct >= 100 ? '#16a34a' : '#1e40af' }}>{salesPct}%</span>
+                        </div>
+                        <div style={{ height: '6px', backgroundColor: '#dbeafe', borderRadius: '3px' }}>
+                          <div style={{ height: '100%', width: `${salesPct}%`, backgroundColor: salesPct >= 100 ? '#16a34a' : '#2563eb', borderRadius: '3px' }} />
+                        </div>
+                      </div>
+                    )}
+                    {myTarget.collection_target > 0 && (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px' }}>
+                          <span style={{ color: '#475569' }}>Collection · ₹{myMonthCollected.toLocaleString('en-IN')} / ₹{Number(myTarget.collection_target).toLocaleString('en-IN')}</span>
+                          <span style={{ fontWeight: 'bold', color: collPct >= 100 ? '#16a34a' : '#1e40af' }}>{collPct}%</span>
+                        </div>
+                        <div style={{ height: '6px', backgroundColor: '#dbeafe', borderRadius: '3px' }}>
+                          <div style={{ height: '100%', width: `${collPct}%`, backgroundColor: collPct >= 100 ? '#16a34a' : '#2563eb', borderRadius: '3px' }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Select Your Name</label>
               <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} disabled={profile?.role === 'agent'}
@@ -692,21 +753,33 @@ function AgentPortal() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>{pendingBills.length} pending bill{pendingBills.length > 1 ? 's' : ''}:</p>
-                    {pendingBills.map((bill) => (
-                      <div key={bill.id} onClick={() => { setMatchedOrder({ ...bill, shops: selectedDeliveryShop }); setAmountReceived(''); }}
-                        style={{ padding: '14px 16px', borderRadius: '8px', cursor: 'pointer', border: matchedOrder?.id === bill.id ? '2px solid #16a34a' : '1px solid #e2e8f0', backgroundColor: matchedOrder?.id === bill.id ? '#f0fdf4' : '#ffffff' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <p style={{ margin: '0 0 4px', fontWeight: 'bold', fontSize: '14px' }}>{bill.bill_number}</p>
-                            <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Total: ₹{bill.bill_amount}</p>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <p style={{ margin: '0', fontWeight: 'bold', fontSize: '16px', color: '#dc2626' }}>₹{bill.pending_amount}</p>
-                            <p style={{ margin: '0', fontSize: '11px', color: '#94a3b8' }}>pending</p>
+                    {pendingBills.map((bill) => {
+                      const isCredit = bill.status === 'delivered';
+                      const isSelected = matchedOrder?.id === bill.id;
+                      return (
+                        <div key={bill.id} onClick={() => { setMatchedOrder({ ...bill, shops: selectedDeliveryShop }); setAmountReceived(''); }}
+                          style={{ padding: '14px 16px', borderRadius: '8px', cursor: 'pointer', border: isSelected ? '2px solid #16a34a' : isCredit ? '1px solid #fca5a5' : '1px solid #e2e8f0', backgroundColor: isSelected ? '#f0fdf4' : isCredit ? '#fff5f5' : '#ffffff' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>{bill.bill_number}</p>
+                                {isCredit && (
+                                  <span style={{ fontSize: '10px', backgroundColor: '#fee2e2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', letterSpacing: '0.3px' }}>CREDIT</span>
+                                )}
+                              </div>
+                              <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>
+                                Total: ₹{parseFloat(bill.bill_amount).toLocaleString('en-IN')}
+                                {isCredit && parseFloat(bill.amount_received || 0) > 0 && ` · Paid: ₹${parseFloat(bill.amount_received).toLocaleString('en-IN')}`}
+                              </p>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{ margin: '0', fontWeight: 'bold', fontSize: '16px', color: '#dc2626' }}>₹{parseFloat(bill.pending_amount).toLocaleString('en-IN')}</p>
+                              <p style={{ margin: '0', fontSize: '11px', color: '#94a3b8' }}>{isCredit ? 'balance due' : 'pending'}</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -799,11 +872,21 @@ function AgentPortal() {
 
             {matchedOrder && (
               <form onSubmit={handleConfirmDelivery} style={{ padding: '20px', border: '2px solid #16a34a', borderRadius: '10px', backgroundColor: '#f0fdf4', marginTop: '10px' }}>
-                <h3 style={{ margin: '0 0 15px', color: '#166534', fontSize: '18px' }}>📦 Collect Payment</h3>
+                <h3 style={{ margin: '0 0 12px', color: '#166534', fontSize: '18px' }}>
+                  {matchedOrder.status === 'delivered' ? '💰 Collect Balance' : '📦 Collect Payment'}
+                </h3>
+                {matchedOrder.status === 'delivered' && (
+                  <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px 12px', marginBottom: '14px', fontSize: '12px', color: '#b91c1c', fontWeight: '500' }}>
+                    ⚠️ Outstanding credit balance from a previous delivery
+                  </div>
+                )}
                 <div style={{ marginBottom: '15px', fontSize: '15px', color: '#1e293b' }}>
                   <p style={{ margin: '0 0 4px' }}><strong>Bill:</strong> {matchedOrder.bill_number}</p>
-                  <p style={{ margin: '0 0 4px' }}><strong>Total:</strong> ₹{matchedOrder.bill_amount}</p>
-                  <p style={{ margin: '0' }}><strong>Balance:</strong> <span style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '18px' }}>₹{matchedOrder.pending_amount}</span></p>
+                  <p style={{ margin: '0 0 4px' }}><strong>Total:</strong> ₹{parseFloat(matchedOrder.bill_amount).toLocaleString('en-IN')}</p>
+                  {matchedOrder.status === 'delivered' && parseFloat(matchedOrder.amount_received || 0) > 0 && (
+                    <p style={{ margin: '0 0 4px', color: '#16a34a' }}><strong>Collected so far:</strong> ₹{parseFloat(matchedOrder.amount_received).toLocaleString('en-IN')}</p>
+                  )}
+                  <p style={{ margin: '0' }}><strong>Balance:</strong> <span style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '18px' }}>₹{parseFloat(matchedOrder.pending_amount).toLocaleString('en-IN')}</span></p>
                 </div>
                 <hr style={{ border: '0', height: '1px', backgroundColor: '#bbf7d0', marginBottom: '16px' }} />
                 <div style={{ marginBottom: '15px' }}>
@@ -834,7 +917,7 @@ function AgentPortal() {
                     style={{ flex: 1, padding: '14px', backgroundColor: '#ffffff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>← Back</button>
                   <button type="submit" disabled={isProcessingDelivery}
                     style={{ flex: 2, padding: '14px', backgroundColor: '#16a34a', color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', opacity: isProcessingDelivery ? 0.7 : 1 }}>
-                    {isProcessingDelivery ? 'Recording...' : '✔ Log Collection'}
+                    {isProcessingDelivery ? 'Recording...' : matchedOrder.status === 'delivered' ? '✔ Record Collection' : '✔ Log Collection'}
                   </button>
                 </div>
               </form>

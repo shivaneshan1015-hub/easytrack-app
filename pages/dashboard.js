@@ -135,6 +135,7 @@ function OwnerDashboard() {
   const [isAddingShop, setIsAddingShop] = useState(false);
   const [capturingGpsFor, setCapturingGpsFor] = useState(null);
   const [deliveryForm, setDeliveryForm] = useState(null);
+  const [collectForm, setCollectForm] = useState(null);
 
   const [selectedShopLedger, setSelectedShopLedger] = useState(null);
   const [shopLedgerHistory, setShopLedgerHistory] = useState([]);
@@ -156,6 +157,9 @@ function OwnerDashboard() {
   const [returnsList, setReturnsList] = useState([]);
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
   const [shopDirSearch, setShopDirSearch] = useState('');
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const [ledgerStatusFilter, setLedgerStatusFilter] = useState('all');
+  const [ledgerAgentFilter, setLedgerAgentFilter] = useState('all');
   const [beatPlan, setBeatPlan] = useState([]);
   const [beatNewDay, setBeatNewDay] = useState('1');
   const [beatNewShop, setBeatNewShop] = useState('');
@@ -194,6 +198,8 @@ function OwnerDashboard() {
   const [restockModal, setRestockModal] = useState(null);
   const [restockQty, setRestockQty] = useState('');
   const [briefing, setBriefing] = useState(null);
+  const [agentTargets, setAgentTargets] = useState([]);
+  const [targetModal, setTargetModal] = useState(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -460,6 +466,26 @@ function OwnerDashboard() {
     setAgentsList(agentsWithCounts);
   }
 
+  async function loadAgentTargets() {
+    const month = new Date().toISOString().slice(0, 7);
+    const { data } = await supabase.from('agent_targets').select('*').eq('month', month);
+    if (data) setAgentTargets(data);
+  }
+
+  const handleSaveTarget = async () => {
+    if (!targetModal) return;
+    const { error } = await supabase.from('agent_targets').upsert([{
+      agent_name: targetModal.agentName,
+      month: targetModal.month,
+      sales_target: parseFloat(targetModal.salesTarget) || 0,
+      collection_target: parseFloat(targetModal.collectionTarget) || 0,
+    }], { onConflict: 'agent_name,month' });
+    if (error) return alert('Failed to save target: ' + error.message);
+    addToast(`✅ Target saved for ${targetModal.agentName}`);
+    setTargetModal(null);
+    loadAgentTargets();
+  };
+
   async function handleDeleteAgent(agent) {
     if (!window.confirm(`Remove agent "${agent.full_name}"? They will lose login access but all their past bills will be preserved.`)) return;
     setIsDeletingAgent(agent.id);
@@ -559,12 +585,14 @@ function OwnerDashboard() {
     setSelectedOrder(null);
     setSelectedShopLedger(null);
     setSelectedAgentForOrder('');
+    setDeliveryForm(null);
+    setCollectForm(null);
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); }
     else if (activeTab === 'history') loadHistoryLedger();
-    else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); }
+    else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -807,14 +835,28 @@ function OwnerDashboard() {
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
     // Sheet 2: Agent Rankings
-    const agentRows = [['Agent', 'Bills', 'Sales (INR)', 'Collected (INR)', 'Efficiency %']];
+    const hasTargets = dateRange === 'month' && agentTargets.length > 0;
+    const agentHeader = hasTargets
+      ? ['Agent', 'Bills', 'Sales (INR)', 'Sales Target (INR)', 'Sales vs Target %', 'Collected (INR)', 'Collection Target (INR)', 'Collection vs Target %', 'Efficiency %']
+      : ['Agent', 'Bills', 'Sales (INR)', 'Collected (INR)', 'Efficiency %'];
+    const agentRows = [agentHeader];
     Object.entries(financials.agentRankings || {})
       .sort((a, b) => b[1].sales - a[1].sales)
       .forEach(([name, d]) => {
-        agentRows.push([name, d.count, d.sales, d.collected, d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0]);
+        const tgt = hasTargets ? agentTargets.find(t => t.agent_name === name) : null;
+        const eff = d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0;
+        if (hasTargets) {
+          const sPct = tgt?.sales_target > 0 ? Math.round(d.sales / tgt.sales_target * 100) : '';
+          const cPct = tgt?.collection_target > 0 ? Math.round(d.collected / tgt.collection_target * 100) : '';
+          agentRows.push([name, d.count, d.sales, tgt?.sales_target || '', sPct !== '' ? sPct + '%' : '—', d.collected, tgt?.collection_target || '', cPct !== '' ? cPct + '%' : '—', eff]);
+        } else {
+          agentRows.push([name, d.count, d.sales, d.collected, eff]);
+        }
       });
     const wsAgents = XLSX.utils.aoa_to_sheet(agentRows);
-    wsAgents['!cols'] = [{ wch: 20 }, { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+    wsAgents['!cols'] = hasTargets
+      ? [{ wch: 20 }, { wch: 8 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 12 }]
+      : [{ wch: 20 }, { wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, wsAgents, 'Agent Rankings');
 
     // Sheet 3: Pending Bills
@@ -865,14 +907,31 @@ function OwnerDashboard() {
   }
 
   function exportFinancePdf() {
+    const pdfHasTargets = dateRange === 'month' && agentTargets.length > 0;
+    const pctColor = (pct) => pct >= 100 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626';
     const agentRows = Object.entries(financials.agentRankings || {})
       .sort((a, b) => b[1].sales - a[1].sales)
-      .map(([name, d], i) => `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
-        <td>${name}</td><td style="text-align:center">${d.count}</td>
-        <td style="text-align:right">₹${d.sales.toLocaleString('en-IN')}</td>
-        <td style="text-align:right;color:#16a34a">₹${d.collected.toLocaleString('en-IN')}</td>
-        <td style="text-align:center">${d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0}%</td>
-      </tr>`).join('');
+      .map(([name, d], i) => {
+        const tgt = pdfHasTargets ? agentTargets.find(t => t.agent_name === name) : null;
+        const sPct = tgt?.sales_target > 0 ? Math.min(100, Math.round(d.sales / tgt.sales_target * 100)) : null;
+        const cPct = tgt?.collection_target > 0 ? Math.min(100, Math.round(d.collected / tgt.collection_target * 100)) : null;
+        const eff = d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0;
+        const tgtCols = pdfHasTargets
+          ? `<td style="text-align:center;font-weight:bold;color:${sPct !== null ? pctColor(sPct) : '#94a3b8'}">${sPct !== null ? sPct + '%' : '—'}</td>
+             <td style="text-align:center;font-weight:bold;color:${cPct !== null ? pctColor(cPct) : '#94a3b8'}">${cPct !== null ? cPct + '%' : '—'}</td>`
+          : '';
+        return `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
+          <td>${name}</td><td style="text-align:center">${d.count}</td>
+          <td style="text-align:right">₹${d.sales.toLocaleString('en-IN')}</td>
+          <td style="text-align:right;color:#16a34a">₹${d.collected.toLocaleString('en-IN')}</td>
+          <td style="text-align:center">${eff}%</td>
+          ${tgtCols}
+        </tr>`;
+      }).join('');
+    const agentThead = pdfHasTargets
+      ? '<tr><th>Agent</th><th>Bills</th><th>Sales</th><th>Collected</th><th>Efficiency</th><th>Sales vs Target</th><th>Collection vs Target</th></tr>'
+      : '<tr><th>Agent</th><th>Bills</th><th>Sales</th><th>Collected</th><th>Efficiency</th></tr>';
+    const agentColspan = pdfHasTargets ? 7 : 5;
     const pendingRows = (financials.shopPendingBills || [])
       .map((b, i) => `<tr style="background:${i % 2 === 0 ? '#fff' : '#f8fafc'}">
         <td>${b.billNumber}</td><td>${b.shopName}</td><td>${b.date}</td>
@@ -889,7 +948,7 @@ function OwnerDashboard() {
     table{width:100%;border-collapse:collapse;font-size:12px}th{background:#0f172a;color:#fff;padding:8px 10px;text-align:left}td{padding:7px 10px;border-bottom:1px solid #e2e8f0}
     @media print{body{padding:10px}}</style></head><body>
     <h1>EasyTrack — Financial Report</h1>
-    <p class="sub">Period: ${label} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-IN')}</p>
+    <p class="sub">Period: ${label} &nbsp;|&nbsp; Generated: ${new Date().toLocaleString('en-IN')}${pdfHasTargets ? ' &nbsp;|&nbsp; 🎯 Targets included' : ''}</p>
     <div class="cards">
       <div class="card"><div class="label">Total Sales</div><div class="val">₹${financials.totalSales.toLocaleString('en-IN')}</div></div>
       <div class="card"><div class="label" style="color:#16a34a">Collected</div><div class="val" style="color:#16a34a">₹${financials.totalCollected.toLocaleString('en-IN')}</div></div>
@@ -897,7 +956,7 @@ function OwnerDashboard() {
       <div class="card" style="background:#0f172a"><div class="label" style="color:#94a3b8">Efficiency</div><div class="val" style="color:#4ade80">${eff}%</div></div>
     </div>
     <h2>Agent Rankings</h2>
-    <table><thead><tr><th>Agent</th><th>Bills</th><th>Sales</th><th>Collected</th><th>Efficiency</th></tr></thead><tbody>${agentRows || '<tr><td colspan="5" style="color:#64748b;text-align:center">No data</td></tr>'}</tbody></table>
+    <table><thead>${agentThead}</thead><tbody>${agentRows || '<tr><td colspan="' + agentColspan + '" style="color:#64748b;text-align:center">No data</td></tr>'}</tbody></table>
     <h2>Pending Bills (${(financials.shopPendingBills || []).length})</h2>
     <table><thead><tr><th>Bill No</th><th>Shop</th><th>Date</th><th>Total</th><th>Pending</th></tr></thead><tbody>${pendingRows || '<tr><td colspan="5" style="color:#64748b;text-align:center">No pending bills</td></tr>'}</tbody></table>
     <script>window.onload=()=>window.print()</script></body></html>`);
@@ -916,6 +975,30 @@ function OwnerDashboard() {
       if (error) throw error;
       addToast('✅ Delivery settled!'); loadHistoryLedger();
     } catch (err) { alert('Failed.'); } finally { setIsUpdating(false); }
+  };
+
+  const handleCollectPayment = async () => {
+    const amt = parseFloat(collectForm.amount);
+    if (isNaN(amt) || amt <= 0) return alert('Enter a valid amount.');
+    const order = historyOrders.find(o => o.id === collectForm.orderId);
+    if (!order) return;
+    const maxPending = parseFloat(order.pending_amount);
+    if (amt > maxPending) return alert(`Cannot exceed outstanding amount ₹${maxPending.toLocaleString('en-IN')}`);
+    setIsUpdating(true);
+    try {
+      const newReceived = parseFloat(order.amount_received || 0) + amt;
+      const newPending = Math.max(0, parseFloat(order.bill_amount) - newReceived);
+      const { error } = await supabase.from('transactions').update({
+        amount_received: newReceived,
+        pending_amount: newPending,
+        payment_mode: collectForm.mode,
+      }).eq('id', collectForm.orderId);
+      if (error) throw error;
+      addToast(`✅ ₹${amt.toLocaleString('en-IN')} collected — Pending: ₹${newPending.toLocaleString('en-IN')}`);
+      setCollectForm(null);
+      loadHistoryLedger();
+    } catch (err) { alert('Failed: ' + err.message); }
+    finally { setIsUpdating(false); }
   };
 
   async function loadLeaveNotifications() {
@@ -1090,6 +1173,30 @@ function OwnerDashboard() {
     const waypoints = optimizedRoute.slice(0, -1).map(s => `${s.latitude},${s.longitude}`).join('|');
     return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&waypoints=${waypoints}&travelmode=driving`;
   };
+
+  const filteredLedger = (() => {
+    let result = historyOrders;
+    if (ledgerSearch.trim()) {
+      const q = ledgerSearch.toLowerCase();
+      result = result.filter(o =>
+        (o.bill_number || '').toLowerCase().includes(q) ||
+        (o.shops?.name || '').toLowerCase().includes(q) ||
+        (o.employee_name || '').toLowerCase().includes(q)
+      );
+    }
+    if (ledgerStatusFilter !== 'all') {
+      result = result.filter(o => {
+        if (ledgerStatusFilter === 'enroute') return o.status === 'approved';
+        if (ledgerStatusFilter === 'credit')  return o.status === 'delivered' && parseFloat(o.pending_amount) > 0;
+        if (ledgerStatusFilter === 'settled') return o.status === 'delivered' && parseFloat(o.pending_amount) <= 0;
+        return true;
+      });
+    }
+    if (ledgerAgentFilter !== 'all') {
+      result = result.filter(o => o.employee_name === ledgerAgentFilter);
+    }
+    return result;
+  })();
 
   const tabStyle = (tab) => ({
     padding: '12px 16px', backgroundColor: activeTab === tab ? '#1e293b' : 'transparent',
@@ -1278,15 +1385,52 @@ function OwnerDashboard() {
 
             ) : activeTab === 'history' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                  <button onClick={exportLedgerExcel}
-                    style={{ padding: '8px 16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
-                    ⬇ Excel
-                  </button>
-                  <button onClick={exportLedgerPdf}
-                    style={{ padding: '8px 16px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
-                    🖨 PDF
-                  </button>
+                {/* ── SEARCH + FILTER BAR ── */}
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', flex: 1 }}>
+                    <input
+                      type="text"
+                      placeholder="Search bill no, shop or agent…"
+                      value={ledgerSearch}
+                      onChange={e => setLedgerSearch(e.target.value)}
+                      style={{ padding: '8px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', minWidth: '220px', flex: 1 }}
+                    />
+                    <select value={ledgerStatusFilter} onChange={e => setLedgerStatusFilter(e.target.value)}
+                      style={{ padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', backgroundColor: '#ffffff', cursor: 'pointer' }}>
+                      <option value="all">All Statuses</option>
+                      <option value="enroute">🚚 En Route</option>
+                      <option value="credit">⚠️ Credit</option>
+                      <option value="settled">✓ Settled</option>
+                    </select>
+                    <select value={ledgerAgentFilter} onChange={e => setLedgerAgentFilter(e.target.value)}
+                      style={{ padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', backgroundColor: '#ffffff', cursor: 'pointer' }}>
+                      <option value="all">All Agents</option>
+                      {[...new Set(historyOrders.map(o => o.employee_name).filter(Boolean))].sort().map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    {(ledgerSearch || ledgerStatusFilter !== 'all' || ledgerAgentFilter !== 'all') && (
+                      <button onClick={() => { setLedgerSearch(''); setLedgerStatusFilter('all'); setLedgerAgentFilter('all'); }}
+                        style={{ padding: '8px 12px', background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', color: '#64748b', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+                    {filteredLedger.length !== historyOrders.length && (
+                      <span style={{ fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                        {filteredLedger.length} of {historyOrders.length}
+                      </span>
+                    )}
+                    <button onClick={exportLedgerExcel}
+                      style={{ padding: '8px 16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                      ⬇ Excel
+                    </button>
+                    <button onClick={exportLedgerPdf}
+                      style={{ padding: '8px 16px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                      🖨 PDF
+                    </button>
+                  </div>
                 </div>
               <div style={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -1300,7 +1444,11 @@ function OwnerDashboard() {
                     <th style={{ padding: '16px', color: '#475569' }}>Status</th>
                     <th style={{ padding: '16px', color: '#475569' }}>Actions</th>
                   </tr></thead>
-                  <tbody>{historyOrders.map((order) => {
+                  <tbody>{filteredLedger.length === 0 ? (
+                    <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
+                      No bills match your search.
+                    </td></tr>
+                  ) : filteredLedger.map((order) => {
                     let badgeLabel = '🚚 En Route', bgStyle = '#fef9c3', textStyle = '#854d0e';
                     if (order.status === 'delivered') {
                       if (parseFloat(order.pending_amount) <= 0) { badgeLabel = '✓ Settled'; bgStyle = '#dcfce7'; textStyle = '#15803d'; }
@@ -1331,6 +1479,47 @@ function OwnerDashboard() {
                         <td style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
                           <button onClick={() => { setEmailModal({ orderId: order.id, billNumber: order.bill_number, shopName: order.shops?.name }); setEmailRecipient(''); }} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📧 Email</button>
+                          {order.status === 'delivered' && parseFloat(order.pending_amount) > 0 && (
+                            collectForm?.orderId === order.id ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', minWidth: '180px' }}>
+                                <div style={{ fontSize: '12px', color: '#166534', fontWeight: '600' }}>Collect — {order.bill_number}</div>
+                                <input
+                                  type="number" min="0.01" step="0.01"
+                                  placeholder={`Max ₹${parseFloat(order.pending_amount).toLocaleString('en-IN')}`}
+                                  value={collectForm.amount}
+                                  onChange={e => setCollectForm({ ...collectForm, amount: e.target.value })}
+                                  style={{ padding: '6px 8px', border: '1px solid #bbf7d0', borderRadius: '4px', fontSize: '13px' }}
+                                />
+                                <select
+                                  value={collectForm.mode}
+                                  onChange={e => setCollectForm({ ...collectForm, mode: e.target.value })}
+                                  style={{ padding: '6px 8px', border: '1px solid #bbf7d0', borderRadius: '4px', fontSize: '13px' }}>
+                                  <option value="Cash">💵 Cash</option>
+                                  <option value="UPI">📱 UPI</option>
+                                  <option value="Cheque">🏢 Cheque</option>
+                                </select>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button
+                                    onClick={handleCollectPayment}
+                                    disabled={isUpdating}
+                                    style={{ flex: 1, padding: '6px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                                    ✓ Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => setCollectForm(null)}
+                                    style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setCollectForm({ orderId: order.id, amount: '', mode: 'Cash' })}
+                                style={{ padding: '6px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
+                                💰 Collect
+                              </button>
+                            )
+                          )}
                           {order.status === 'approved' && (
                             deliveryForm?.orderId === order.id ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', minWidth: '180px' }}>
@@ -1583,9 +1772,16 @@ function OwnerDashboard() {
 
                 {/* ── AGENT DETAILED REPORT ── */}
                 <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <h3 style={{ margin: '0 0 16px', fontSize: '15px', fontWeight: 'bold' }}>👥 Agent Detailed Report</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold' }}>👥 Agent Detailed Report</h3>
+                    {dateRange !== 'month' && agentTargets.length > 0 && (
+                      <span style={{ fontSize: '12px', color: '#64748b', backgroundColor: '#f8fafc', padding: '4px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        🎯 Switch to "This Month" to see targets
+                      </span>
+                    )}
+                  </div>
                   <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <table style={{ width: '100%', minWidth: dateRange === 'month' ? '780px' : '560px', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
                       <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Bills</th>
@@ -1593,21 +1789,39 @@ function OwnerDashboard() {
                       <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Collected</th>
                       <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Avg Bill</th>
                       <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Collection %</th>
+                      {dateRange === 'month' && <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Sales vs Target</th>}
+                      {dateRange === 'month' && <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Collection vs Target</th>}
                     </tr></thead>
-                    <tbody>{Object.entries(financials.agentRankings || {}).map(([name, data], i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{name}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>{data.count || 0}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#2563eb' }}>₹{data.sales.toLocaleString('en-IN')}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a' }}>₹{data.collected.toLocaleString('en-IN')}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{data.count > 0 ? Math.round(data.sales / data.count).toLocaleString('en-IN') : 0}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                          <span style={{ backgroundColor: data.sales > 0 && (data.collected / data.sales) >= 0.8 ? '#dcfce7' : '#fef9c3', color: data.sales > 0 && (data.collected / data.sales) >= 0.8 ? '#16a34a' : '#854d0e', padding: '3px 8px', borderRadius: '20px', fontWeight: 'bold' }}>
-                            {data.sales > 0 ? Math.round((data.collected / data.sales) * 100) : 0}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}</tbody>
+                    <tbody>{Object.entries(financials.agentRankings || {}).map(([name, data], i) => {
+                      const tgt = dateRange === 'month' ? agentTargets.find(t => t.agent_name === name) : null;
+                      const sPct = tgt?.sales_target > 0 ? Math.min(100, Math.round(data.sales / tgt.sales_target * 100)) : null;
+                      const cPct = tgt?.collection_target > 0 ? Math.min(100, Math.round(data.collected / tgt.collection_target * 100)) : null;
+                      const tgtCell = (pct, target) => pct !== null ? (
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 'bold', color: pct >= 100 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626' }}>{pct}%</span>
+                          <div style={{ height: '4px', backgroundColor: '#e2e8f0', borderRadius: '2px', margin: '4px 0 2px' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, backgroundColor: pct >= 100 ? '#16a34a' : pct >= 75 ? '#f59e0b' : '#2563eb', borderRadius: '2px' }} />
+                          </div>
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>/ ₹{Number(target).toLocaleString('en-IN')}</span>
+                        </div>
+                      ) : <span style={{ color: '#cbd5e1', fontSize: '12px' }}>—</span>;
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{name}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right' }}>{data.count || 0}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#2563eb' }}>₹{data.sales.toLocaleString('en-IN')}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: '#16a34a' }}>₹{data.collected.toLocaleString('en-IN')}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right' }}>₹{data.count > 0 ? Math.round(data.sales / data.count).toLocaleString('en-IN') : 0}</td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                            <span style={{ backgroundColor: data.sales > 0 && (data.collected / data.sales) >= 0.8 ? '#dcfce7' : '#fef9c3', color: data.sales > 0 && (data.collected / data.sales) >= 0.8 ? '#16a34a' : '#854d0e', padding: '3px 8px', borderRadius: '20px', fontWeight: 'bold' }}>
+                              {data.sales > 0 ? Math.round((data.collected / data.sales) * 100) : 0}%
+                            </span>
+                          </td>
+                          {dateRange === 'month' && <td style={{ padding: '10px 12px' }}>{tgtCell(sPct, tgt?.sales_target)}</td>}
+                          {dateRange === 'month' && <td style={{ padding: '10px 12px' }}>{tgtCell(cPct, tgt?.collection_target)}</td>}
+                        </tr>
+                      );
+                    })}</tbody>
                   </table>
                   </div>
                 </div>
@@ -2308,7 +2522,11 @@ function OwnerDashboard() {
                             <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>{agent.billCount} bills</span>
                           </td>
                           <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(agent.created_at).toLocaleDateString('en-IN')}</td>
-                          <td style={{ padding: '14px 16px' }}>
+                          <td style={{ padding: '14px 16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <button
+                              onClick={() => { const currentMonth = new Date().toISOString().slice(0, 7); const tgt = agentTargets.find(t => t.agent_name === agent.full_name); setTargetModal({ agentName: agent.full_name, month: currentMonth, salesTarget: tgt?.sales_target ?? '', collectionTarget: tgt?.collection_target ?? '' }); }}
+                              style={{ padding: '8px 14px', backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                            >🎯 Target</button>
                             <button
                               onClick={() => handleDeleteAgent(agent)}
                               disabled={isDeletingAgent === agent.id}
@@ -2544,6 +2762,55 @@ function OwnerDashboard() {
                       </div>
                     </div>
 
+                    {/* Monthly Targets */}
+                    {(() => {
+                      const currentMonth = new Date().toISOString().slice(0, 7);
+                      const tgt = agentTargets.find(t => t.agent_name === selectedAgentProfile?.full_name);
+                      const salesPct = tgt?.sales_target > 0 ? Math.min(100, Math.round(agentProfileData.totalSales / tgt.sales_target * 100)) : 0;
+                      const collPct = tgt?.collection_target > 0 ? Math.min(100, Math.round(agentProfileData.totalCollected / tgt.collection_target * 100)) : 0;
+                      return (
+                        <div style={{ backgroundColor: '#f8fafc', borderRadius: '8px', padding: '16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Monthly Targets</h3>
+                            <button onClick={() => setTargetModal({ agentName: selectedAgentProfile.full_name, month: currentMonth, salesTarget: tgt?.sales_target ?? '', collectionTarget: tgt?.collection_target ?? '' })}
+                              style={{ padding: '4px 10px', backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                              🎯 {tgt ? 'Edit' : 'Set'} Target
+                            </button>
+                          </div>
+                          {tgt ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              {tgt.sales_target > 0 && (
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '13px' }}>
+                                    <span style={{ color: '#475569' }}>Sales</span>
+                                    <span><strong style={{ color: salesPct >= 100 ? '#16a34a' : '#0f172a' }}>₹{agentProfileData.totalSales.toLocaleString('en-IN')}</strong><span style={{ color: '#94a3b8' }}> / ₹{Number(tgt.sales_target).toLocaleString('en-IN')}</span></span>
+                                  </div>
+                                  <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
+                                    <div style={{ height: '100%', width: `${salesPct}%`, backgroundColor: salesPct >= 100 ? '#16a34a' : salesPct >= 75 ? '#f59e0b' : '#2563eb', borderRadius: '4px' }} />
+                                  </div>
+                                  <span style={{ fontSize: '11px', color: '#64748b' }}>{salesPct}% achieved</span>
+                                </div>
+                              )}
+                              {tgt.collection_target > 0 && (
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '13px' }}>
+                                    <span style={{ color: '#475569' }}>Collection</span>
+                                    <span><strong style={{ color: collPct >= 100 ? '#16a34a' : '#0f172a' }}>₹{agentProfileData.totalCollected.toLocaleString('en-IN')}</strong><span style={{ color: '#94a3b8' }}> / ₹{Number(tgt.collection_target).toLocaleString('en-IN')}</span></span>
+                                  </div>
+                                  <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
+                                    <div style={{ height: '100%', width: `${collPct}%`, backgroundColor: collPct >= 100 ? '#16a34a' : collPct >= 75 ? '#f59e0b' : '#2563eb', borderRadius: '4px' }} />
+                                  </div>
+                                  <span style={{ fontSize: '11px', color: '#64748b' }}>{collPct}% collected</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8', textAlign: 'center', padding: '8px 0' }}>No target set for this month. Click "Set Target" to add one.</p>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Leave History */}
                     <div>
                       <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 'bold', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Leave History</h3>
@@ -2640,6 +2907,53 @@ function OwnerDashboard() {
                     style={{ flex: 2, padding: '12px', backgroundColor: !restockQty || parseInt(restockQty) <= 0 ? '#94a3b8' : '#f59e0b', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: !restockQty || parseInt(restockQty) <= 0 ? 'not-allowed' : 'pointer' }}>
                     ✓ Add Stock
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Target Modal */}
+          {targetModal && (
+            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+              <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '28px', width: '100%', maxWidth: '400px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <div>
+                    <h2 style={{ margin: '0 0 2px', fontSize: '18px' }}>🎯 Set Monthly Target</h2>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{targetModal.agentName}</p>
+                  </div>
+                  <button onClick={() => setTargetModal(null)} style={{ background: 'none', border: 'none', fontSize: '20px', color: '#94a3b8', cursor: 'pointer' }}>✕</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>Month</label>
+                    <input type="month" value={targetModal.month}
+                      onChange={(e) => setTargetModal(prev => ({ ...prev, month: e.target.value }))}
+                      style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>Sales Target (₹)</label>
+                    <input type="number" min="0" placeholder="e.g. 100000"
+                      value={targetModal.salesTarget}
+                      onChange={(e) => setTargetModal(prev => ({ ...prev, salesTarget: e.target.value }))}
+                      style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#475569', marginBottom: '6px' }}>Collection Target (₹)</label>
+                    <input type="number" min="0" placeholder="e.g. 80000"
+                      value={targetModal.collectionTarget}
+                      onChange={(e) => setTargetModal(prev => ({ ...prev, collectionTarget: e.target.value }))}
+                      style={{ width: '100%', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                    <button onClick={() => setTargetModal(null)}
+                      style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                    <button onClick={handleSaveTarget}
+                      style={{ flex: 2, padding: '12px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+                      ✓ Save Target
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
