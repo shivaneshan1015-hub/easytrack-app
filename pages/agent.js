@@ -91,6 +91,10 @@ function AgentPortal() {
   const [expenseDate, setExpenseDate] = useState('');
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
 
+  // End-of-day summary
+  const [eodSummary, setEodSummary] = useState(null);
+  const [isGeneratingEod, setIsGeneratingEod] = useState(false);
+
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
     const id = Date.now();
@@ -252,6 +256,54 @@ function AgentPortal() {
     setExpenseDate('');
     setExpenseCategory('Travel');
     loadMyExpenses();
+  }
+
+  async function generateEodSummary() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    setIsGeneratingEod(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const todayStart = new Date(today + 'T00:00:00').toISOString();
+    const [{ data: deliveries }, { data: expenses }, { data: checkIns }, { data: attendanceRow }] = await Promise.all([
+      supabase.from('transactions')
+        .select('bill_number, bill_amount, amount_received, pending_amount, shops(name)')
+        .eq('employee_name', agentName)
+        .eq('status', 'delivered')
+        .gte('delivered_at', todayStart),
+      supabase.from('agent_expenses')
+        .select('amount, category, status')
+        .eq('agent_name', agentName)
+        .eq('expense_date', today),
+      supabase.from('shop_visits')
+        .select('shop_name, outcome')
+        .eq('agent_name', agentName)
+        .gte('visited_at', todayStart),
+      supabase.from('attendance')
+        .select('marked_at')
+        .eq('agent_name', agentName)
+        .eq('date', today)
+        .maybeSingle(),
+    ]);
+    const billCount = (deliveries || []).length;
+    const totalBilled = (deliveries || []).reduce((s, t) => s + parseFloat(t.bill_amount || 0), 0);
+    const totalCollected = (deliveries || []).reduce((s, t) => s + parseFloat(t.amount_received || 0), 0);
+    const totalPending = (deliveries || []).reduce((s, t) => s + parseFloat(t.pending_amount || 0), 0);
+    const totalExpenses = (expenses || []).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+    const visitCount = (checkIns || []).length;
+    setEodSummary({
+      agentName,
+      date: today,
+      billCount,
+      totalBilled,
+      totalCollected,
+      totalPending,
+      totalExpenses,
+      visitCount,
+      isPresent: !!attendanceRow,
+      deliveries: deliveries || [],
+      checkIns: checkIns || [],
+    });
+    setIsGeneratingEod(false);
   }
 
   async function loadMyReturnData() {
@@ -911,6 +963,74 @@ function AgentPortal() {
                 </button>
               </div>
             )}
+
+            {/* ── CLOSE DAY BUTTON ── */}
+            <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={generateEodSummary} disabled={isGeneratingEod}
+                style={{ padding: '9px 18px', backgroundColor: isGeneratingEod ? '#94a3b8' : '#0f172a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: isGeneratingEod ? 'not-allowed' : 'pointer' }}>
+                {isGeneratingEod ? '...' : '🌙 Close Day'}
+              </button>
+            </div>
+
+            {/* ── EOD SUMMARY MODAL ── */}
+            {eodSummary && (() => {
+              const fmt = v => `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+              const dateLabel = new Date(eodSummary.date + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+              const msg = [
+                `🌙 *End of Day — ${eodSummary.agentName}*`,
+                `📅 ${dateLabel}`,
+                ``,
+                `📦 Deliveries: ${eodSummary.billCount} bill${eodSummary.billCount !== 1 ? 's' : ''}`,
+                `💰 Collected: ${fmt(eodSummary.totalCollected)} / ${fmt(eodSummary.totalBilled)} billed`,
+                eodSummary.totalPending > 0 ? `⚠️ Outstanding: ${fmt(eodSummary.totalPending)}` : `✅ No outstanding dues`,
+                `🏪 Shop visits: ${eodSummary.visitCount}`,
+                eodSummary.totalExpenses > 0 ? `🧾 Expenses: ${fmt(eodSummary.totalExpenses)}` : null,
+                ``,
+                `_Sent via EasyTrack_`,
+              ].filter(l => l !== null).join('\n');
+              const shareLink = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+              return (
+                <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+                  <div style={{ backgroundColor: '#ffffff', borderRadius: '12px', padding: '20px', width: '100%', maxWidth: '420px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#0f172a' }}>🌙 Day Summary</h3>
+                      <button type="button" onClick={() => setEodSummary(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+                    </div>
+                    <p style={{ margin: '0 0 12px', fontSize: '12px', color: '#64748b' }}>{dateLabel}</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                      {[
+                        { label: 'Bills Delivered', value: eodSummary.billCount, color: '#2563eb' },
+                        { label: 'Collected', value: fmt(eodSummary.totalCollected), color: '#16a34a' },
+                        { label: 'Total Billed', value: fmt(eodSummary.totalBilled), color: '#0f172a' },
+                        { label: 'Outstanding', value: fmt(eodSummary.totalPending), color: eodSummary.totalPending > 0 ? '#dc2626' : '#16a34a' },
+                        { label: 'Shop Visits', value: eodSummary.visitCount, color: '#7c3aed' },
+                        { label: 'Expenses', value: fmt(eodSummary.totalExpenses), color: '#b45309' },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>{label}</p>
+                          <p style={{ margin: '4px 0 0', fontSize: '18px', fontWeight: 'bold', color }}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {eodSummary.deliveries.length > 0 && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <p style={{ margin: '0 0 8px', fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>Today's Deliveries</p>
+                        {eodSummary.deliveries.map((d, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', backgroundColor: '#f8fafc', borderRadius: '4px', marginBottom: '4px', fontSize: '12px' }}>
+                            <span style={{ color: '#1e293b' }}>{d.shops?.name || '—'} · {d.bill_number}</span>
+                            <span style={{ fontWeight: '600', color: '#16a34a' }}>{fmt(parseFloat(d.amount_received || 0))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <a href={shareLink} target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'block', textAlign: 'center', padding: '12px', backgroundColor: '#25d366', color: '#ffffff', textDecoration: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px' }}>
+                      📱 Share on WhatsApp
+                    </a>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── PERFORMANCE SUMMARY ── */}
             {periodStats && (() => {
