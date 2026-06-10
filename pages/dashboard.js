@@ -202,6 +202,7 @@ function OwnerDashboard() {
   const [targetModal, setTargetModal] = useState(null);
   const [agentPerf, setAgentPerf] = useState({ today: {}, week: {} });
   const [agentPerfView, setAgentPerfView] = useState('today');
+  const [creditAlerts, setCreditAlerts] = useState([]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -546,20 +547,37 @@ function OwnerDashboard() {
 
   async function loadShops() {
     setIsLoading(true);
-    const [{ data: shopsData }, { data: txData }] = await Promise.all([
+    const [{ data: shopsData }, { data: openTx }, { data: partialTx }] = await Promise.all([
       supabase.from('shops').select('*').order('name', { ascending: true }),
-      supabase.from('transactions').select('shop_id, pending_amount').neq('status', 'delivered'),
+      supabase.from('transactions').select('shop_id, bill_amount').in('status', ['draft', 'approved']),
+      supabase.from('transactions').select('shop_id, pending_amount').eq('status', 'delivered').gt('pending_amount', 0),
     ]);
     if (shopsData) {
       const withCredit = shopsData.map(shop => {
-        const used = (txData || [])
-          .filter(tx => tx.shop_id === shop.id)
-          .reduce((sum, tx) => sum + parseFloat(tx.pending_amount || 0), 0);
-        return { ...shop, credit_used: used };
+        const openUsed = (openTx || []).filter(tx => tx.shop_id === shop.id).reduce((s, tx) => s + parseFloat(tx.bill_amount || 0), 0);
+        const partialUsed = (partialTx || []).filter(tx => tx.shop_id === shop.id).reduce((s, tx) => s + parseFloat(tx.pending_amount || 0), 0);
+        return { ...shop, credit_used: openUsed + partialUsed };
       });
       setShopsList(withCredit);
     }
     setIsLoading(false);
+  }
+
+  async function loadCreditAlerts() {
+    const [{ data: shops }, { data: openTx }, { data: partialTx }] = await Promise.all([
+      supabase.from('shops').select('id, name, credit_limit').gt('credit_limit', 0),
+      supabase.from('transactions').select('shop_id, bill_amount').in('status', ['draft', 'approved']),
+      supabase.from('transactions').select('shop_id, pending_amount').eq('status', 'delivered').gt('pending_amount', 0),
+    ]);
+    const alerts = (shops || []).map(shop => {
+      const openUsed = (openTx || []).filter(t => t.shop_id === shop.id).reduce((s, t) => s + parseFloat(t.bill_amount || 0), 0);
+      const partialUsed = (partialTx || []).filter(t => t.shop_id === shop.id).reduce((s, t) => s + parseFloat(t.pending_amount || 0), 0);
+      const creditUsed = openUsed + partialUsed;
+      const limit = parseFloat(shop.credit_limit);
+      const pct = limit > 0 ? (creditUsed / limit) * 100 : 0;
+      return { ...shop, creditUsed, limit, pct };
+    }).filter(s => s.pct >= 80).sort((a, b) => b.pct - a.pct);
+    setCreditAlerts(alerts);
   }
 
   async function loadBeatPlan() {
@@ -617,7 +635,7 @@ function OwnerDashboard() {
     setSelectedAgentForOrder('');
     setDeliveryForm(null);
     setCollectForm(null);
-    if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); }
+    if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); loadCreditAlerts(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
@@ -1383,6 +1401,41 @@ function OwnerDashboard() {
                 </div>
               )}
 
+              {/* ── CREDIT LIMIT ALERTS ── */}
+              {creditAlerts.length > 0 && (
+                <div style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '12px', padding: '20px 24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 'bold', color: '#9a3412' }}>⚠️ Credit Limit Alerts</h3>
+                    <span style={{ backgroundColor: '#dc2626', color: '#fff', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{creditAlerts.length}</span>
+                    <span style={{ fontSize: '12px', color: '#92400e', marginLeft: 'auto' }}>Shops at or near their credit ceiling</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {creditAlerts.map((shop, i) => {
+                      const isOver = shop.pct >= 100;
+                      return (
+                        <div key={i} style={{ backgroundColor: '#ffffff', borderRadius: '8px', padding: '12px 16px', border: `1px solid ${isOver ? '#fca5a5' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                          <div style={{ flex: 1, minWidth: '140px' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#0f172a' }}>{shop.name}</span>
+                            <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: 'bold', color: isOver ? '#dc2626' : '#d97706', backgroundColor: isOver ? '#fee2e2' : '#fef3c7', padding: '2px 8px', borderRadius: '10px' }}>
+                              {isOver ? '⛔ OVER LIMIT' : '⚠️ NEAR LIMIT'}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '13px', color: '#475569', minWidth: '200px' }}>
+                            ₹{shop.creditUsed.toLocaleString('en-IN')} used of ₹{shop.limit.toLocaleString('en-IN')}
+                          </span>
+                          <div style={{ flex: 1, minWidth: '120px' }}>
+                            <div style={{ height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', marginBottom: '2px' }}>
+                              <div style={{ height: '100%', width: `${Math.min(100, shop.pct)}%`, backgroundColor: isOver ? '#dc2626' : '#f59e0b', borderRadius: '3px' }} />
+                            </div>
+                            <span style={{ fontSize: '11px', color: isOver ? '#dc2626' : '#d97706', fontWeight: 'bold' }}>{Math.round(shop.pct)}% used</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {pendingOrders.length === 0 ? (
                 <div style={{ padding: '40px', textAlign: 'center', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <p style={{ margin: '0', color: '#64748b' }}>No pending orders.</p>
@@ -1400,7 +1453,10 @@ function OwnerDashboard() {
                     <tbody>{pendingOrders.map((order) => (
                       <tr key={order.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                         <td style={{ padding: '16px', fontWeight: 'bold' }}>{order.bill_number}</td>
-                        <td style={{ padding: '16px', fontWeight: '500' }}>{order.shops?.name}</td>
+                        <td style={{ padding: '16px', fontWeight: '500' }}>
+                          {order.shops?.name}
+                          {(() => { const a = creditAlerts.find(c => c.id === order.shops?.id); if (!a) return null; return <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 'bold', color: a.pct >= 100 ? '#dc2626' : '#d97706', backgroundColor: a.pct >= 100 ? '#fee2e2' : '#fef3c7', padding: '1px 6px', borderRadius: '8px' }}>{a.pct >= 100 ? '⛔ OVER' : '⚠️ NEAR'}</span>; })()}
+                        </td>
                         <td style={{ padding: '16px', color: '#475569' }}>{order.employee_name}</td>
                         <td style={{ padding: '16px', fontWeight: 'bold', color: '#16a34a' }}>₹{order.bill_amount}</td>
                         <td style={{ padding: '16px' }}>
