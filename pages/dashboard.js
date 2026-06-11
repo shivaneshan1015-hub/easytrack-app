@@ -209,6 +209,7 @@ function OwnerDashboard() {
   const [targetModal, setTargetModal] = useState(null);
   const [agentPerf, setAgentPerf] = useState({ today: {}, week: {} });
   const [agentPerfView, setAgentPerfView] = useState('today');
+  const [agentPerfMonth, setAgentPerfMonth] = useState({});
   const [creditAlerts, setCreditAlerts] = useState([]);
 
   useEffect(() => {
@@ -484,24 +485,33 @@ function OwnerDashboard() {
   }
 
   async function loadAgentPerformance() {
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
     weekStart.setHours(0, 0, 0, 0);
-    const todayStart = new Date();
+    const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
     const { data } = await supabase
       .from('transactions')
       .select('employee_name, bill_amount, amount_received, delivered_at')
       .eq('status', 'delivered')
-      .gte('delivered_at', weekStart.toISOString());
-    const week = {}, today = {};
+      .gte('delivered_at', monthStart.toISOString());
+    const week = {}, today = {}, month = {};
     (data || []).forEach(t => {
       const n = t.employee_name; if (!n) return;
-      if (!week[n]) week[n] = { bills: 0, sales: 0, collected: 0 };
-      week[n].bills++;
-      week[n].sales += parseFloat(t.bill_amount || 0);
-      week[n].collected += parseFloat(t.amount_received || 0);
-      if (t.delivered_at && new Date(t.delivered_at) >= todayStart) {
+      if (!month[n]) month[n] = { bills: 0, sales: 0, collected: 0 };
+      month[n].bills++;
+      month[n].sales += parseFloat(t.bill_amount || 0);
+      month[n].collected += parseFloat(t.amount_received || 0);
+      const dt = t.delivered_at ? new Date(t.delivered_at) : null;
+      if (dt && dt >= weekStart) {
+        if (!week[n]) week[n] = { bills: 0, sales: 0, collected: 0 };
+        week[n].bills++;
+        week[n].sales += parseFloat(t.bill_amount || 0);
+        week[n].collected += parseFloat(t.amount_received || 0);
+      }
+      if (dt && dt >= todayStart) {
         if (!today[n]) today[n] = { bills: 0, sales: 0, collected: 0 };
         today[n].bills++;
         today[n].sales += parseFloat(t.bill_amount || 0);
@@ -509,6 +519,7 @@ function OwnerDashboard() {
       }
     });
     setAgentPerf({ today, week });
+    setAgentPerfMonth(month);
   }
 
   async function loadAgentTargets() {
@@ -2841,6 +2852,70 @@ function OwnerDashboard() {
                     </div>
                   )}
                 </div>
+
+                {/* ── TARGET VS ACHIEVEMENT ── */}
+                {agentTargets.length > 0 && (() => {
+                  const month = new Date().toISOString().slice(0, 7);
+                  const monthLabel = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                  const rows = agentsList.map(agent => {
+                    const tgt = agentTargets.find(t => t.agent_name === agent.full_name);
+                    const actual = agentPerfMonth[agent.full_name] || { sales: 0, collected: 0, bills: 0 };
+                    return { name: agent.full_name, tgt, actual };
+                  }).filter(r => r.tgt);
+                  if (rows.length === 0) return null;
+                  return (
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
+                        <div>
+                          <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>🎯 Target vs Achievement</h3>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{monthLabel} · month-to-date</p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {rows.sort((a, b) => {
+                          const aPct = a.tgt?.sales_target > 0 ? a.actual.sales / a.tgt.sales_target : 0;
+                          const bPct = b.tgt?.sales_target > 0 ? b.actual.sales / b.tgt.sales_target : 0;
+                          return bPct - aPct;
+                        }).map(({ name, tgt, actual }, i) => {
+                          const salesPct = tgt.sales_target > 0 ? Math.min(100, Math.round(actual.sales / tgt.sales_target * 100)) : null;
+                          const collPct = tgt.collection_target > 0 ? Math.min(100, Math.round(actual.collected / tgt.collection_target * 100)) : null;
+                          const statusColor = salesPct === null ? '#94a3b8' : salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626';
+                          const statusLabel = salesPct === null ? '—' : salesPct >= 100 ? '✅ On Target' : salesPct >= 70 ? '⚡ On Track' : '⚠️ Behind';
+                          return (
+                            <div key={name} style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#0f172a' }}>{name}</span>
+                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: statusColor }}>{statusLabel}</span>
+                              </div>
+                              {salesPct !== null && (
+                                <div style={{ marginBottom: '10px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                                    <span style={{ color: '#475569' }}>Sales · ₹{actual.sales.toLocaleString('en-IN')} / ₹{Number(tgt.sales_target).toLocaleString('en-IN')}</span>
+                                    <span style={{ fontWeight: 'bold', color: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626' }}>{salesPct}%</span>
+                                  </div>
+                                  <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
+                                    <div style={{ height: '100%', width: `${salesPct}%`, backgroundColor: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626', borderRadius: '4px', transition: 'width 0.4s' }} />
+                                  </div>
+                                </div>
+                              )}
+                              {collPct !== null && (
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                                    <span style={{ color: '#475569' }}>Collection · ₹{actual.collected.toLocaleString('en-IN')} / ₹{Number(tgt.collection_target).toLocaleString('en-IN')}</span>
+                                    <span style={{ fontWeight: 'bold', color: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#dc2626' }}>{collPct}%</span>
+                                  </div>
+                                  <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
+                                    <div style={{ height: '100%', width: `${collPct}%`, backgroundColor: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#dc2626', borderRadius: '4px', transition: 'width 0.4s' }} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ── TODAY'S SHOP VISITS ── */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>

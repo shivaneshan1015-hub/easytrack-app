@@ -1086,6 +1086,47 @@ function AgentPortal() {
               </div>
             )}
 
+            {/* ── MONTHLY TARGET PROGRESS ── */}
+            {myTarget && (() => {
+              const salesPct = myTarget.sales_target > 0 ? Math.min(100, Math.round(myMonthSales / myTarget.sales_target * 100)) : 0;
+              const collPct = myTarget.collection_target > 0 ? Math.min(100, Math.round(myMonthCollected / myTarget.collection_target * 100)) : 0;
+              const hasSales = myTarget.sales_target > 0;
+              const hasColl = myTarget.collection_target > 0;
+              if (!hasSales && !hasColl) return null;
+              const fmt = v => v >= 100000 ? (v / 100000).toFixed(1) + 'L' : v >= 1000 ? (v / 1000).toFixed(1) + 'k' : String(v);
+              return (
+                <div style={{ marginBottom: '14px', padding: '12px 14px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                  <p style={{ margin: '0 0 8px', fontSize: '11px', fontWeight: 'bold', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    🎯 {new Date().toLocaleDateString('en-IN', { month: 'long' })} Targets
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {hasSales && (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px' }}>
+                          <span style={{ color: '#475569' }}>Sales · ₹{fmt(myMonthSales)} / ₹{fmt(myTarget.sales_target)}</span>
+                          <span style={{ fontWeight: 'bold', color: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#1e40af' }}>{salesPct}%</span>
+                        </div>
+                        <div style={{ height: '6px', backgroundColor: '#dbeafe', borderRadius: '3px' }}>
+                          <div style={{ height: '100%', width: `${salesPct}%`, backgroundColor: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#2563eb', borderRadius: '3px' }} />
+                        </div>
+                      </div>
+                    )}
+                    {hasColl && (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '3px' }}>
+                          <span style={{ color: '#475569' }}>Collection · ₹{fmt(myMonthCollected)} / ₹{fmt(myTarget.collection_target)}</span>
+                          <span style={{ fontWeight: 'bold', color: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#1e40af' }}>{collPct}%</span>
+                        </div>
+                        <div style={{ height: '6px', backgroundColor: '#dbeafe', borderRadius: '3px' }}>
+                          <div style={{ height: '100%', width: `${collPct}%`, backgroundColor: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#2563eb', borderRadius: '3px' }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* ── CLOSE DAY BUTTON ── */}
             <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'flex-end' }}>
               <button type="button" onClick={generateEodSummary} disabled={isGeneratingEod}
