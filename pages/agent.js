@@ -111,6 +111,7 @@ function AgentPortal() {
   const [showVanLoadForm, setShowVanLoadForm] = useState(false);
   const [vanLoadDraft, setVanLoadDraft] = useState({});
   const [isSubmittingVanLoad, setIsSubmittingVanLoad] = useState(false);
+  const [vanSearch, setVanSearch] = useState('');
 
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
@@ -334,6 +335,10 @@ function AgentPortal() {
   async function generateMyRoute() {
     const agentName = profile?.full_name;
     if (!agentName) return;
+    if (!navigator.geolocation) {
+      alert('GPS is not supported on this device/browser.');
+      return;
+    }
     setIsLoadingRoute(true);
     setShowMyRoute(true);
     navigator.geolocation.getCurrentPosition(async (pos) => {
@@ -1260,38 +1265,34 @@ function AgentPortal() {
             <div style={{ marginBottom: '14px', padding: '14px', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: vanLoad.length > 0 || showVanLoadForm ? '12px' : '0' }}>
                 <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>🚚 Van Stock</span>
-                <button type="button" onClick={() => { setShowVanLoadForm(!showVanLoadForm); if (!showVanLoadForm) { const draft = {}; vanLoad.forEach(l => { draft[l.product_id] = l.quantity_loaded; }); setVanLoadDraft(draft); } }}
+                <button type="button" onClick={() => { setShowVanLoadForm(!showVanLoadForm); if (!showVanLoadForm) { const draft = {}; vanLoad.forEach(l => { draft[l.product_id] = l.quantity_loaded; }); setVanLoadDraft(draft); setVanSearch(''); } }}
                   style={{ padding: '6px 14px', backgroundColor: showVanLoadForm ? '#f1f5f9' : '#0f172a', color: showVanLoadForm ? '#475569' : '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
                   {showVanLoadForm ? '✕ Cancel' : vanLoad.length === 0 ? '📦 Load Van' : '✏️ Edit Load'}
                 </button>
               </div>
 
-              {showVanLoadForm && (() => {
-                const [vanSearch, setVanSearch] = React.useState('');
-                const filtered = vanSearch.trim() ? productCatalog.filter(p => p.name.toLowerCase().includes(vanSearch.toLowerCase())) : productCatalog;
-                return (
-                  <div>
-                    <input type="text" placeholder="🔍 Filter products..." value={vanSearch} onChange={e => setVanSearch(e.target.value)}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', marginBottom: '10px', boxSizing: 'border-box' }} />
-                    <div style={{ maxHeight: '260px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-                      {filtered.map(prod => (
-                        <div key={prod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                          <span style={{ flex: 1, fontSize: '13px', color: '#1e293b' }}>{prod.name}</span>
-                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>₹{prod.unit_price}</span>
-                          <input type="number" min="0" placeholder="0"
-                            value={vanLoadDraft[prod.id] || ''}
-                            onChange={e => setVanLoadDraft(prev => ({ ...prev, [prod.id]: e.target.value }))}
-                            style={{ width: '58px', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #cbd5e1', textAlign: 'center', fontSize: '14px', fontWeight: 'bold' }} />
-                        </div>
-                      ))}
-                    </div>
-                    <button type="button" onClick={handleSubmitVanLoad} disabled={isSubmittingVanLoad}
-                      style={{ width: '100%', padding: '12px', backgroundColor: isSubmittingVanLoad ? '#94a3b8' : '#0f172a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: isSubmittingVanLoad ? 'not-allowed' : 'pointer' }}>
-                      {isSubmittingVanLoad ? 'Saving...' : '💾 Save Van Load'}
-                    </button>
+              {showVanLoadForm && (
+                <div>
+                  <input type="text" placeholder="🔍 Filter products..." value={vanSearch} onChange={e => setVanSearch(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', marginBottom: '10px', boxSizing: 'border-box' }} />
+                  <div style={{ maxHeight: '260px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                    {(vanSearch.trim() ? productCatalog.filter(p => p.name.toLowerCase().includes(vanSearch.toLowerCase())) : productCatalog).map(prod => (
+                      <div key={prod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        <span style={{ flex: 1, fontSize: '13px', color: '#1e293b' }}>{prod.name}</span>
+                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>₹{prod.unit_price}</span>
+                        <input type="number" min="0" placeholder="0"
+                          value={vanLoadDraft[prod.id] || ''}
+                          onChange={e => setVanLoadDraft(prev => ({ ...prev, [prod.id]: e.target.value }))}
+                          style={{ width: '58px', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #cbd5e1', textAlign: 'center', fontSize: '14px', fontWeight: 'bold' }} />
+                      </div>
+                    ))}
                   </div>
-                );
-              })()}
+                  <button type="button" onClick={handleSubmitVanLoad} disabled={isSubmittingVanLoad}
+                    style={{ width: '100%', padding: '12px', backgroundColor: isSubmittingVanLoad ? '#94a3b8' : '#0f172a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: isSubmittingVanLoad ? 'not-allowed' : 'pointer' }}>
+                    {isSubmittingVanLoad ? 'Saving...' : '💾 Save Van Load'}
+                  </button>
+                </div>
+              )}
 
               {!showVanLoadForm && vanLoad.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
