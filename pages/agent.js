@@ -95,6 +95,10 @@ function AgentPortal() {
   const [eodSummary, setEodSummary] = useState(null);
   const [isGeneratingEod, setIsGeneratingEod] = useState(false);
 
+  // Booking enhancements
+  const [bookingProductSearch, setBookingProductSearch] = useState('');
+  const [lastSubmittedOrder, setLastSubmittedOrder] = useState(null);
+
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
     const id = Date.now();
@@ -772,8 +776,18 @@ function AgentPortal() {
         return;
       }
       await supabase.from('transaction_items').insert(formulatedItems.map(item => ({ transaction_id: txData.id, ...item })));
-      addToast(`✅ Order ${billNumber} submitted!`);
+      const shopName = isNewShop ? newShopName.trim() : (shops.find(s => s.id === targetShopId)?.name || '');
+      setLastSubmittedOrder({
+        billNumber,
+        shopName,
+        total: cumulativeBillSum,
+        items: formulatedItems.map(item => {
+          const prod = productCatalog.find(p => p.id === item.product_id);
+          return { name: prod?.name || '—', qty: item.quantity, total: item.total_price };
+        }),
+      });
       setOrderItems([{ productId: '', quantity: 1 }]);
+      setBookingProductSearch('');
       setNewShopName(''); setWhatsappNumber('');
       setGpsCoordinates({ lat: null, lng: null }); setGpsStatus('Not Anchored');
       setIsNewShop(false); setSelectedShop(''); setSelectedShopData(null); setShopGpsStatus('');
@@ -818,6 +832,29 @@ function AgentPortal() {
 
         {/* ── PHASE 1: BOOK ORDER ── */}
         {activeTab === 'booking' ? (
+          <>
+          {lastSubmittedOrder && (
+            <div style={{ marginBottom: '20px', padding: '20px', backgroundColor: '#f0fdf4', border: '2px solid #bbf7d0', borderRadius: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#15803d' }}>✅ Order Submitted!</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#64748b' }}>{lastSubmittedOrder.billNumber} · {lastSubmittedOrder.shopName}</p>
+                </div>
+                <button type="button" onClick={() => setLastSubmittedOrder(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}>✕</button>
+              </div>
+              {lastSubmittedOrder.items.map((it, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '5px 0', borderTop: i === 0 ? '1px solid #bbf7d0' : 'none' }}>
+                  <span style={{ color: '#374151' }}>{it.qty} × {it.name}</span>
+                  <span style={{ fontWeight: '600', color: '#15803d' }}>₹{it.total.toLocaleString('en-IN')}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', paddingTop: '8px', borderTop: '2px solid #bbf7d0', fontWeight: 'bold', fontSize: '15px' }}>
+                <span style={{ color: '#0f172a' }}>Total</span>
+                <span style={{ color: '#15803d' }}>₹{lastSubmittedOrder.total.toLocaleString('en-IN')}</span>
+              </div>
+              <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#64748b', textAlign: 'center' }}>Pending owner approval · visible in Pending Orders</p>
+            </div>
+          )}
           <form onSubmit={handleSubmitOrder}>
             {myTarget && (() => {
               const salesPct = myTarget.sales_target > 0 ? Math.min(100, Math.round(myMonthSales / myTarget.sales_target * 100)) : 0;
@@ -912,30 +949,68 @@ function AgentPortal() {
             </div>
 
             <div style={{ marginBottom: '30px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '12px' }}>Order Items</label>
-              {orderItems.map((item, index) => (
-                <div key={index} style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-                  <select value={item.productId} onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
-                    style={{ flexGrow: 2, padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' }}>
-                    <option value="">-- Choose Product --</option>
-                    {productCatalog.map((prod) => <option key={prod.id} value={prod.id}>{prod.name} (₹{prod.unit_price})</option>)}
-                  </select>
-                  <input type="number" min="1" value={item.quantity} onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
-                    style={{ width: '70px', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', textAlign: 'center', backgroundColor: '#ffffff', color: '#0f172a' }} />
-                  {orderItems.length > 1 && (
-                    <button type="button" onClick={() => removeOrderItemRow(index)}
-                      style={{ padding: '0 12px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>✕</button>
-                  )}
-                </div>
-              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <label style={{ fontWeight: 'bold' }}>Order Items</label>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>{productCatalog.length} products</span>
+              </div>
+              <input
+                type="text"
+                placeholder="🔍 Filter products by name..."
+                value={bookingProductSearch}
+                onChange={e => setBookingProductSearch(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '14px', marginBottom: '12px', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
+              />
+              {orderItems.map((item, index) => {
+                const filtered = bookingProductSearch.trim()
+                  ? productCatalog.filter(p => p.name.toLowerCase().includes(bookingProductSearch.trim().toLowerCase()))
+                  : productCatalog;
+                const selectedProd = productCatalog.find(p => p.id === item.productId);
+                const rowTotal = selectedProd ? selectedProd.unit_price * item.quantity : 0;
+                return (
+                  <div key={index} style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <select value={item.productId} onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
+                        style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', fontSize: '14px' }}>
+                        <option value="">-- Choose Product --</option>
+                        {filtered.map((prod) => <option key={prod.id} value={prod.id}>{prod.name} · ₹{prod.unit_price}</option>)}
+                      </select>
+                      <input type="number" min="1" value={item.quantity} onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
+                        style={{ width: '62px', padding: '10px', borderRadius: '6px', border: '1.5px solid #cbd5e1', textAlign: 'center', backgroundColor: '#ffffff', color: '#0f172a', fontSize: '14px' }} />
+                      {orderItems.length > 1 && (
+                        <button type="button" onClick={() => removeOrderItemRow(index)}
+                          style={{ padding: '8px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>✕</button>
+                      )}
+                    </div>
+                    {rowTotal > 0 && (
+                      <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#475569', textAlign: 'right' }}>
+                        {item.quantity} × ₹{selectedProd.unit_price.toLocaleString('en-IN')} = <strong style={{ color: '#0f172a' }}>₹{rowTotal.toLocaleString('en-IN')}</strong>
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
               <button type="button" onClick={addOrderItemRow} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>➕ Add Product Line</button>
             </div>
+
+            {(() => {
+              const grandTotal = orderItems.reduce((sum, item) => {
+                const prod = productCatalog.find(p => p.id === item.productId);
+                return sum + (prod ? prod.unit_price * item.quantity : 0);
+              }, 0);
+              return grandTotal > 0 ? (
+                <div style={{ marginBottom: '16px', padding: '14px 18px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '2px solid #bfdbfe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e40af' }}>Order Total</span>
+                  <span style={{ fontSize: '22px', fontWeight: 'bold', color: '#1e40af' }}>₹{grandTotal.toLocaleString('en-IN')}</span>
+                </div>
+              ) : null;
+            })()}
 
             <button type="submit" disabled={isSubmitting}
               style={{ width: '100%', padding: '16px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
               {isSubmitting ? 'Submitting...' : '🚀 Submit Order'}
             </button>
           </form>
+          </>
 
         ) : activeTab === 'delivery' ? (
           /* ── PHASE 2: DELIVER & COLLECT ── */
