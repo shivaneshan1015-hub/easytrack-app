@@ -99,6 +99,12 @@ function AgentPortal() {
   const [bookingProductSearch, setBookingProductSearch] = useState('');
   const [lastSubmittedOrder, setLastSubmittedOrder] = useState(null);
 
+  // My route
+  const [myRoute, setMyRoute] = useState([]);
+  const [myRouteDist, setMyRouteDist] = useState(0);
+  const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [showMyRoute, setShowMyRoute] = useState(false);
+
   // Van stock
   const [vanLoad, setVanLoad] = useState([]);
   const [vanDelivered, setVanDelivered] = useState([]);
@@ -315,6 +321,72 @@ function AgentPortal() {
       checkIns: checkIns || [],
     });
     setIsGeneratingEod(false);
+  }
+
+  const calcDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
+  async function generateMyRoute() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    setIsLoadingRoute(true);
+    setShowMyRoute(true);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      let startLat = pos.coords.latitude;
+      let startLng = pos.coords.longitude;
+      const todayDow = new Date().getDay();
+      const today = new Date().toISOString().slice(0, 10);
+
+      const [{ data: beatData }, { data: pendingTx }] = await Promise.all([
+        supabase.from('beat_plans').select('shops(id, name, phone_number, latitude, longitude)').eq('employee_name', agentName).eq('day_of_week', todayDow),
+        supabase.from('transactions').select('shop_id, bill_number').eq('employee_name', agentName).eq('status', 'approved'),
+      ]);
+
+      const pendingShopIds = new Set((pendingTx || []).map(t => t.shop_id));
+      const pendingByShop = {};
+      (pendingTx || []).forEach(t => { if (!pendingByShop[t.shop_id]) pendingByShop[t.shop_id] = []; pendingByShop[t.shop_id].push(t.bill_number); });
+
+      let shops = (beatData || []).map(b => b.shops).filter(s => s && s.latitude && s.longitude);
+      if (shops.length === 0 && pendingShopIds.size > 0) {
+        const { data: shopData } = await supabase.from('shops').select('id, name, phone_number, latitude, longitude').in('id', [...pendingShopIds]).not('latitude', 'is', null);
+        shops = shopData || [];
+      } else {
+        const beatIds = new Set(shops.map(s => s.id));
+        const extraIds = [...pendingShopIds].filter(id => !beatIds.has(id));
+        if (extraIds.length > 0) {
+          const { data: extra } = await supabase.from('shops').select('id, name, phone_number, latitude, longitude').in('id', extraIds).not('latitude', 'is', null);
+          shops = [...shops, ...(extra || [])];
+        }
+      }
+      shops = shops.map(s => ({ ...s, pendingBills: pendingByShop[s.id] || [] }));
+
+      let remaining = [...shops], route = [], curLat = startLat, curLng = startLng, totalDist = 0;
+      while (remaining.length > 0) {
+        let bestIdx = 0, bestDist = Infinity;
+        remaining.forEach((s, i) => {
+          let d = calcDistance(curLat, curLng, parseFloat(s.latitude), parseFloat(s.longitude));
+          if (s.pendingBills.length > 0) d *= 0.8;
+          if (d < bestDist) { bestDist = d; bestIdx = i; }
+        });
+        const s = remaining[bestIdx];
+        const realDist = calcDistance(curLat, curLng, parseFloat(s.latitude), parseFloat(s.longitude));
+        totalDist += realDist;
+        route.push({ ...s, distFromPrev: realDist.toFixed(1) });
+        curLat = parseFloat(s.latitude); curLng = parseFloat(s.longitude);
+        remaining.splice(bestIdx, 1);
+      }
+      setMyRoute(route);
+      setMyRouteDist(totalDist.toFixed(1));
+      setIsLoadingRoute(false);
+    }, () => {
+      setIsLoadingRoute(false);
+      alert('Could not get your location. Please allow GPS access.');
+    });
   }
 
   async function loadVanBalance() {
@@ -1308,6 +1380,44 @@ function AgentPortal() {
                 </div>
               </div>
             )}
+
+            {/* ── MY ROUTE ── */}
+            <div style={{ marginBottom: '16px' }}>
+              <button type="button" onClick={myRoute.length > 0 ? () => setShowMyRoute(!showMyRoute) : generateMyRoute} disabled={isLoadingRoute}
+                style={{ width: '100%', padding: '11px', backgroundColor: isLoadingRoute ? '#94a3b8' : '#7c3aed', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: isLoadingRoute ? 'not-allowed' : 'pointer' }}>
+                {isLoadingRoute ? '📡 Getting location...' : myRoute.length > 0 ? (showMyRoute ? '🗺️ Hide My Route' : `🗺️ Show My Route (${myRoute.length} stops)`) : '🗺️ Generate My Route'}
+              </button>
+              {showMyRoute && myRoute.length > 0 && (
+                <div style={{ marginTop: '10px', padding: '14px', backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <p style={{ margin: 0, fontSize: '13px', fontWeight: 'bold', color: '#6d28d9' }}>{myRoute.length} stops · ~{myRouteDist} km total</p>
+                    {(() => {
+                      const dest = myRoute[myRoute.length - 1];
+                      const wps = myRoute.slice(0, -1).map(s => `${s.latitude},${s.longitude}`).join('|');
+                      const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${dest.latitude},${dest.longitude}${wps ? `&waypoints=${wps}` : ''}&travelmode=driving`;
+                      return <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 14px', backgroundColor: '#16a34a', color: '#fff', textDecoration: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>🗺️ Open in Maps</a>;
+                    })()}
+                  </div>
+                  {myRoute.map((shop, i) => (
+                    <div key={shop.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: shop.pendingBills?.length > 0 ? '#f59e0b' : '#7c3aed', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '12px' }}>{i + 1}</div>
+                        {i < myRoute.length - 1 && <div style={{ width: '2px', height: '16px', backgroundColor: '#e9d5ff', marginTop: '2px' }} />}
+                      </div>
+                      <div style={{ flex: 1, paddingTop: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: '600', fontSize: '13px', color: '#1e293b' }}>{shop.name}</span>
+                          {shop.pendingBills?.length > 0 && <span style={{ fontSize: '10px', backgroundColor: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: '8px', fontWeight: 'bold', border: '1px solid #fbbf24' }}>📦 {shop.pendingBills.length} pending</span>}
+                        </div>
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#94a3b8' }}>~{shop.distFromPrev} km from previous</p>
+                      </div>
+                      <a href={`https://www.google.com/maps/search/?api=1&query=${shop.latitude},${shop.longitude}`} target="_blank" rel="noopener noreferrer"
+                        style={{ padding: '4px 10px', backgroundColor: '#f5f3ff', color: '#7c3aed', textDecoration: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', flexShrink: 0, border: '1px solid #e9d5ff' }}>Maps</a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* ── TODAY'S BEAT ── */}
             {todaysBeat.length > 0 && (

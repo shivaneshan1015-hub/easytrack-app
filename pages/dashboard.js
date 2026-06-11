@@ -1215,15 +1215,23 @@ function OwnerDashboard() {
       .map(b => b.shops)
       .filter(s => s && s.latitude && s.longitude);
 
-    // 2. Fall back to approved transactions if no beat plan for today
-    if (shops.length === 0) {
-      const { data: agentTx } = await supabase
-        .from('transactions')
-        .select('shop_id')
-        .eq('employee_name', routeAgent)
-        .eq('status', 'approved');
+    // 2. Fetch pending orders for this agent — merge with beat plan and mark shops
+    const { data: pendingTx } = await supabase
+      .from('transactions')
+      .select('shop_id, bill_number, bill_amount')
+      .eq('employee_name', routeAgent)
+      .eq('status', 'approved');
 
-      const shopIds = [...new Set((agentTx || []).map(t => t.shop_id))];
+    const pendingShopIds = new Set((pendingTx || []).map(t => t.shop_id));
+    const pendingByShop = {};
+    (pendingTx || []).forEach(t => {
+      if (!pendingByShop[t.shop_id]) pendingByShop[t.shop_id] = [];
+      pendingByShop[t.shop_id].push(t.bill_number);
+    });
+
+    // If no beat plan, fall back to pending order shops
+    if (shops.length === 0) {
+      const shopIds = [...pendingShopIds];
       if (shopIds.length > 0) {
         const { data: shopData } = await supabase
           .from('shops')
@@ -1232,14 +1240,29 @@ function OwnerDashboard() {
           .not('latitude', 'is', null);
         shops = shopData || [];
       }
+    } else {
+      // Merge: add any pending-order shops not already in beat plan
+      const beatShopIds = new Set(shops.map(s => s.id));
+      const extraIds = [...pendingShopIds].filter(id => !beatShopIds.has(id));
+      if (extraIds.length > 0) {
+        const { data: extraShops } = await supabase
+          .from('shops')
+          .select('id, name, phone_number, latitude, longitude')
+          .in('id', extraIds)
+          .not('latitude', 'is', null);
+        shops = [...shops, ...(extraShops || [])];
+      }
     }
 
     if (shops.length === 0) {
       setIsGeneratingRoute(false);
-      return alert(`No beat plan or approved orders with GPS found for ${routeAgent}.`);
+      return alert(`No beat plan or pending orders with GPS found for ${routeAgent}.`);
     }
 
-    // Nearest neighbor algorithm
+    // Mark each shop with pending order info
+    shops = shops.map(s => ({ ...s, pendingBills: pendingByShop[s.id] || [] }));
+
+    // Nearest neighbor algorithm — pending-order shops get a 20% distance bonus
     let remaining = [...shops];
     let route = [];
     let currentLat = startLat;
@@ -1251,7 +1274,8 @@ function OwnerDashboard() {
       let nearestDist = Infinity;
 
       remaining.forEach((shop, i) => {
-        const d = calcDistance(currentLat, currentLng, parseFloat(shop.latitude), parseFloat(shop.longitude));
+        let d = calcDistance(currentLat, currentLng, parseFloat(shop.latitude), parseFloat(shop.longitude));
+        if (shop.pendingBills?.length > 0) d *= 0.8; // 20% priority boost for pending orders
         if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
       });
 
@@ -2286,9 +2310,16 @@ function OwnerDashboard() {
                           </div>
                           <div style={{ paddingTop: '6px', flex: 1 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <div>
-                                <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>{shop.name}</p>
-                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>📞 {shop.phone_number || 'No contact'}</p>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                  <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>{shop.name}</p>
+                                  {shop.pendingBills?.length > 0 && (
+                                    <span style={{ backgroundColor: '#fef3c7', color: '#92400e', fontSize: '10px', fontWeight: 'bold', padding: '2px 7px', borderRadius: '10px', border: '1px solid #fbbf24' }}>
+                                      📦 {shop.pendingBills.length} pending
+                                    </span>
+                                  )}
+                                </div>
+                                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>📞 {shop.phone_number || 'No contact'}</p>
                                 {shop.distanceFromPrev && <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#94a3b8' }}>~{shop.distanceFromPrev} km from previous stop</p>}
                               </div>
                               <a href={`https://www.google.com/maps/search/?api=1&query=${shop.latitude},${shop.longitude}`}
