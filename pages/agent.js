@@ -2017,19 +2017,25 @@ function AgentPortal() {
                 <p style={{ color: '#64748b', fontSize: '14px', textAlign: 'center', padding: '20px' }}>No leaves taken yet.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {leaveHistory.map((leave) => (
-                    <div key={leave.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <div>
-                        <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '14px' }}>
-                          {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </p>
-                        <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{leave.reason}</p>
+                  {leaveHistory.map((leave) => {
+                    const st = leave.status || 'approved';
+                    const badgeBg = st === 'approved' ? '#dcfce7' : st === 'rejected' ? '#fee2e2' : '#fef9c3';
+                    const badgeColor = st === 'approved' ? '#16a34a' : st === 'rejected' ? '#dc2626' : '#ca8a04';
+                    const badgeLabel = st === 'approved' ? '✓ Approved' : st === 'rejected' ? '✕ Rejected' : '⏳ Pending';
+                    return (
+                      <div key={leave.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <div>
+                          <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '14px' }}>
+                            {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </p>
+                          <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{leave.reason}</p>
+                        </div>
+                        <span style={{ backgroundColor: badgeBg, color: badgeColor, padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}>
+                          {badgeLabel}
+                        </span>
                       </div>
-                      <span style={{ backgroundColor: '#dcfce7', color: '#16a34a', padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}>
-                        ✓ Approved
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
