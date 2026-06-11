@@ -191,7 +191,7 @@ function AgentPortal() {
     setIsMarkingAttendance(true);
     const today = new Date().toISOString().slice(0, 10);
     const { data, error } = await supabase.from('attendance')
-      .upsert([{ agent_name: agentName, date: today }], { onConflict: 'agent_name,date' })
+      .upsert([{ agent_name: agentName, date: today, marked_at: new Date().toISOString() }], { onConflict: 'agent_name,date' })
       .select().single();
     setIsMarkingAttendance(false);
     if (error) return alert('Failed: ' + error.message);
@@ -223,6 +223,7 @@ function AgentPortal() {
         note: checkInNote.trim() || null,
         latitude: lat || null,
         longitude: lng || null,
+        visited_at: new Date().toISOString(),
       }]);
       setIsCheckingIn(false);
       if (error) return alert('Check-in failed: ' + error.message);
@@ -413,7 +414,7 @@ function AgentPortal() {
   }
 
   async function handleSubmitVanLoad() {
-    const agentName = profile?.full_name;
+    const agentName = profile?.full_name || selectedEmployee;
     if (!agentName) return;
     const today = new Date().toISOString().slice(0, 10);
     const rows = Object.entries(vanLoadDraft)
