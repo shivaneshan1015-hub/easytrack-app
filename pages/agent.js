@@ -190,13 +190,22 @@ function AgentPortal() {
     if (!agentName) return;
     setIsMarkingAttendance(true);
     const today = new Date().toISOString().slice(0, 10);
-    const { data, error } = await supabase.from('attendance')
-      .upsert([{ agent_name: agentName, date: today, marked_at: new Date().toISOString() }], { onConflict: 'agent_name,date' })
-      .select().single();
-    setIsMarkingAttendance(false);
-    if (error) return alert('Failed: ' + error.message);
-    setTodayAttendance(data);
-    addToast('✅ Attendance marked — Present today!');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/agent/mark-present', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ agent_name: agentName, date: today }),
+      });
+      const json = await res.json();
+      if (!res.ok) return alert('Failed: ' + json.error);
+      setTodayAttendance(json.data);
+      addToast('✅ Attendance marked — Present today!');
+    } catch (err) {
+      alert('Failed: ' + err.message);
+    } finally {
+      setIsMarkingAttendance(false);
+    }
   }
 
   async function loadTodayCheckIns() {
@@ -215,22 +224,32 @@ function AgentPortal() {
     if (!selectedDeliveryShop) return;
     setIsCheckingIn(true);
     const doInsert = async (lat, lng) => {
-      const { error } = await supabase.from('shop_visits').insert([{
-        agent_name: profile?.full_name || selectedEmployee,
-        shop_id: selectedDeliveryShop.id,
-        shop_name: selectedDeliveryShop.name,
-        outcome: checkInOutcome,
-        note: checkInNote.trim() || null,
-        latitude: lat || null,
-        longitude: lng || null,
-        visited_at: new Date().toISOString(),
-      }]);
-      setIsCheckingIn(false);
-      if (error) return alert('Check-in failed: ' + error.message);
-      addToast(`📍 Checked in at ${selectedDeliveryShop.name}`);
-      setCheckInNote('');
-      setCheckInOutcome('visited');
-      loadTodayCheckIns();
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch('/api/agent/check-in', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({
+            agent_name: profile?.full_name || selectedEmployee,
+            shop_id: selectedDeliveryShop.id,
+            shop_name: selectedDeliveryShop.name,
+            outcome: checkInOutcome,
+            note: checkInNote.trim() || null,
+            latitude: lat || null,
+            longitude: lng || null,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) return alert('Check-in failed: ' + json.error);
+        addToast(`📍 Checked in at ${selectedDeliveryShop.name}`);
+        setCheckInNote('');
+        setCheckInOutcome('visited');
+        loadTodayCheckIns();
+      } catch (err) {
+        alert('Check-in failed: ' + err.message);
+      } finally {
+        setIsCheckingIn(false);
+      }
     };
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
