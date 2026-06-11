@@ -99,6 +99,13 @@ function AgentPortal() {
   const [bookingProductSearch, setBookingProductSearch] = useState('');
   const [lastSubmittedOrder, setLastSubmittedOrder] = useState(null);
 
+  // Van stock
+  const [vanLoad, setVanLoad] = useState([]);
+  const [vanDelivered, setVanDelivered] = useState([]);
+  const [showVanLoadForm, setShowVanLoadForm] = useState(false);
+  const [vanLoadDraft, setVanLoadDraft] = useState({});
+  const [isSubmittingVanLoad, setIsSubmittingVanLoad] = useState(false);
+
   const [toasts, setToasts] = useState([]);
   const addToast = (message) => {
     const id = Date.now();
@@ -310,6 +317,45 @@ function AgentPortal() {
     setIsGeneratingEod(false);
   }
 
+  async function loadVanBalance() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const todayStart = today + 'T00:00:00';
+    const [{ data: loads }, { data: deliveredTx }] = await Promise.all([
+      supabase.from('van_loads').select('product_id, product_name, quantity_loaded').eq('agent_name', agentName).eq('load_date', today),
+      supabase.from('transactions').select('id').eq('employee_name', agentName).eq('status', 'delivered').gte('delivered_at', todayStart),
+    ]);
+    setVanLoad(loads || []);
+    if (deliveredTx && deliveredTx.length > 0) {
+      const { data: items } = await supabase.from('transaction_items').select('product_id, quantity').in('transaction_id', deliveredTx.map(t => t.id));
+      setVanDelivered(items || []);
+    } else {
+      setVanDelivered([]);
+    }
+  }
+
+  async function handleSubmitVanLoad() {
+    const agentName = profile?.full_name;
+    if (!agentName) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = Object.entries(vanLoadDraft)
+      .filter(([, qty]) => parseInt(qty) > 0)
+      .map(([productId, qty]) => {
+        const prod = productCatalog.find(p => p.id === productId);
+        return { agent_name: agentName, load_date: today, product_id: productId, product_name: prod?.name || productId, quantity_loaded: parseInt(qty) };
+      });
+    if (rows.length === 0) return alert('Enter a quantity for at least one product.');
+    setIsSubmittingVanLoad(true);
+    const { error } = await supabase.from('van_loads').upsert(rows, { onConflict: 'agent_name,load_date,product_id' });
+    setIsSubmittingVanLoad(false);
+    if (error) return alert('Failed: ' + error.message);
+    setShowVanLoadForm(false);
+    setVanLoadDraft({});
+    loadVanBalance();
+    addToast('✅ Van stock saved!');
+  }
+
   async function loadMyReturnData() {
     const agentName = profile?.full_name;
     if (!agentName) return;
@@ -371,7 +417,7 @@ function AgentPortal() {
 
   useEffect(() => {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
-    if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); loadTodayCheckIns(); loadTodayAttendance(); }
+    if (activeTab === 'delivery') { loadTodaysBeat(); loadPeriodStats(); loadTodayCheckIns(); loadTodayAttendance(); loadVanBalance(); }
     if (activeTab === 'returns') loadMyReturnData();
     if (activeTab === 'expenses') loadMyExpenses();
   }, [activeTab, profile, selectedEmployee]);
@@ -711,6 +757,7 @@ function AgentPortal() {
         shopPhone: selectedDeliveryShop?.phone_number,
       });
       setMatchedOrder(null); setAmountReceived('');
+      loadVanBalance();
       if (selectedDeliveryShop) handleDeliveryShopSelect(selectedDeliveryShop);
     } catch (err) {
       alert('Failed: ' + err.message);
@@ -1106,6 +1153,70 @@ function AgentPortal() {
                 </div>
               );
             })()}
+
+            {/* ── VAN STOCK ── */}
+            <div style={{ marginBottom: '14px', padding: '14px', backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: vanLoad.length > 0 || showVanLoadForm ? '12px' : '0' }}>
+                <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>🚚 Van Stock</span>
+                <button type="button" onClick={() => { setShowVanLoadForm(!showVanLoadForm); if (!showVanLoadForm) { const draft = {}; vanLoad.forEach(l => { draft[l.product_id] = l.quantity_loaded; }); setVanLoadDraft(draft); } }}
+                  style={{ padding: '6px 14px', backgroundColor: showVanLoadForm ? '#f1f5f9' : '#0f172a', color: showVanLoadForm ? '#475569' : '#ffffff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+                  {showVanLoadForm ? '✕ Cancel' : vanLoad.length === 0 ? '📦 Load Van' : '✏️ Edit Load'}
+                </button>
+              </div>
+
+              {showVanLoadForm && (() => {
+                const [vanSearch, setVanSearch] = React.useState('');
+                const filtered = vanSearch.trim() ? productCatalog.filter(p => p.name.toLowerCase().includes(vanSearch.toLowerCase())) : productCatalog;
+                return (
+                  <div>
+                    <input type="text" placeholder="🔍 Filter products..." value={vanSearch} onChange={e => setVanSearch(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', marginBottom: '10px', boxSizing: 'border-box' }} />
+                    <div style={{ maxHeight: '260px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                      {filtered.map(prod => (
+                        <div key={prod.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                          <span style={{ flex: 1, fontSize: '13px', color: '#1e293b' }}>{prod.name}</span>
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>₹{prod.unit_price}</span>
+                          <input type="number" min="0" placeholder="0"
+                            value={vanLoadDraft[prod.id] || ''}
+                            onChange={e => setVanLoadDraft(prev => ({ ...prev, [prod.id]: e.target.value }))}
+                            style={{ width: '58px', padding: '6px 8px', borderRadius: '6px', border: '1.5px solid #cbd5e1', textAlign: 'center', fontSize: '14px', fontWeight: 'bold' }} />
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={handleSubmitVanLoad} disabled={isSubmittingVanLoad}
+                      style={{ width: '100%', padding: '12px', backgroundColor: isSubmittingVanLoad ? '#94a3b8' : '#0f172a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '14px', cursor: isSubmittingVanLoad ? 'not-allowed' : 'pointer' }}>
+                      {isSubmittingVanLoad ? 'Saving...' : '💾 Save Van Load'}
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {!showVanLoadForm && vanLoad.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {vanLoad.map(load => {
+                    const deliveredQty = vanDelivered.filter(d => d.product_id === load.product_id).reduce((s, d) => s + (d.quantity || 0), 0);
+                    const remaining = Math.max(0, load.quantity_loaded - deliveredQty);
+                    const pct = load.quantity_loaded > 0 ? Math.round((remaining / load.quantity_loaded) * 100) : 0;
+                    const barColor = pct > 50 ? '#16a34a' : pct > 20 ? '#d97706' : '#dc2626';
+                    return (
+                      <div key={load.product_id} style={{ padding: '8px 10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '13px', color: '#1e293b', fontWeight: '500' }}>{load.product_name}</span>
+                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: barColor }}>{remaining} <span style={{ color: '#94a3b8', fontWeight: 'normal' }}>/ {load.quantity_loaded}</span></span>
+                        </div>
+                        <div style={{ height: '4px', backgroundColor: '#e2e8f0', borderRadius: '2px' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, backgroundColor: barColor, borderRadius: '2px', transition: 'width 0.3s' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {!showVanLoadForm && vanLoad.length === 0 && (
+                <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', textAlign: 'center' }}>No stock loaded today. Tap "Load Van" to begin.</p>
+              )}
+            </div>
 
             {/* ── PERFORMANCE SUMMARY ── */}
             {periodStats && (() => {
