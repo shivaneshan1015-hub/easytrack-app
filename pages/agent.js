@@ -37,7 +37,8 @@ function AgentPortal() {
   const [isLoadingBills, setIsLoadingBills] = useState(false);
 
   // Leave states
-  const [leaveDate, setLeaveDate] = useState('');
+  const [leaveStartDate, setLeaveStartDate] = useState('');
+  const [leaveEndDate, setLeaveEndDate] = useState('');
   const [leaveReason, setLeaveReason] = useState('');
   const [isApplyingLeave, setIsApplyingLeave] = useState(false);
   const [leaveMessage, setLeaveMessage] = useState('');
@@ -539,46 +540,66 @@ function AgentPortal() {
 
   const handleApplyLeave = async (e) => {
     e.preventDefault();
-    if (!leaveDate) return alert('Please select a leave date.');
+    if (!leaveStartDate) return alert('Please select a start date.');
+    if (!leaveEndDate) return alert('Please select an end date.');
+    if (leaveEndDate < leaveStartDate) return alert('End date must be on or after start date.');
     setIsApplyingLeave(true);
     setLeaveMessage('');
 
     try {
-      // Check if leave already exists for this date
+      // Build list of dates in range
+      const dates = [];
+      const cur = new Date(leaveStartDate);
+      const end = new Date(leaveEndDate);
+      while (cur <= end) {
+        dates.push(cur.toISOString().slice(0, 10));
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      // Check for conflicts on any date in range
       const { data: existing } = await supabase
         .from('leaves')
-        .select('id')
+        .select('leave_date')
         .eq('agent_id', profile.id)
-        .eq('leave_date', leaveDate)
-        .single();
+        .in('leave_date', dates);
 
-      if (existing) {
-        setLeaveMessage('❌ You already have a leave applied for this date.');
+      if (existing && existing.length > 0) {
+        const conflicts = existing.map(r => new Date(r.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })).join(', ');
+        setLeaveMessage(`❌ Leave already applied for: ${conflicts}`);
         setIsApplyingLeave(false);
         return;
       }
 
-      // Apply leave
-      const { error } = await supabase.from('leaves').insert([{
+      // Insert one row per date
+      const reason = leaveReason.trim() || 'Personal leave';
+      const rows = dates.map(d => ({
         agent_id: profile.id,
         agent_name: profile.full_name,
-        leave_date: leaveDate,
-        reason: leaveReason.trim() || 'Personal leave',
+        leave_date: d,
+        reason,
         status: 'approved'
-      }]);
-
+      }));
+      const { error } = await supabase.from('leaves').insert(rows);
       if (error) throw error;
 
-      // Auto-reassign pending deliveries for this date
-      const reassigned = await autoReassignDeliveries(leaveDate);
-
-      const dateLabel = new Date(leaveDate).toLocaleDateString('en-IN');
-      if (reassigned > 0) {
-        setLeaveMessage(`✅ Leave applied for ${dateLabel}. ${reassigned} delivery bill${reassigned > 1 ? 's' : ''} reassigned to available agents.`);
-      } else {
-        setLeaveMessage(`✅ Leave applied for ${dateLabel}. No pending deliveries to reassign.`);
+      // Auto-reassign pending deliveries for each date
+      let totalReassigned = 0;
+      for (const d of dates) {
+        totalReassigned += await autoReassignDeliveries(d);
       }
-      setLeaveDate('');
+
+      const isSingleDay = dates.length === 1;
+      const rangeLabel = isSingleDay
+        ? new Date(leaveStartDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : `${new Date(leaveStartDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(leaveEndDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} (${dates.length} days)`;
+
+      if (totalReassigned > 0) {
+        setLeaveMessage(`✅ Leave applied for ${rangeLabel}. ${totalReassigned} delivery bill${totalReassigned > 1 ? 's' : ''} reassigned to available agents.`);
+      } else {
+        setLeaveMessage(`✅ Leave applied for ${rangeLabel}. No pending deliveries to reassign.`);
+      }
+      setLeaveStartDate('');
+      setLeaveEndDate('');
       setLeaveReason('');
       loadLeaveHistory();
     } catch (err) {
@@ -2005,12 +2026,24 @@ function AgentPortal() {
               <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Your pending deliveries will be automatically reassigned to available agents.</p>
 
               <form onSubmit={handleApplyLeave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Leave Date</label>
-                  <input type="date" value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)}
-                    min={todayStr}
-                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '15px', boxSizing: 'border-box', color: '#0f172a' }} />
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>From Date</label>
+                    <input type="date" value={leaveStartDate} onChange={(e) => { setLeaveStartDate(e.target.value); if (leaveEndDate && e.target.value > leaveEndDate) setLeaveEndDate(e.target.value); }}
+                      min={todayStr}
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '15px', boxSizing: 'border-box', color: '#0f172a' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>To Date</label>
+                    <input type="date" value={leaveEndDate} onChange={(e) => setLeaveEndDate(e.target.value)}
+                      min={leaveStartDate || todayStr}
+                      style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '15px', boxSizing: 'border-box', color: '#0f172a' }} />
+                  </div>
                 </div>
+                {leaveStartDate && leaveEndDate && leaveStartDate !== leaveEndDate && (() => {
+                  const days = Math.round((new Date(leaveEndDate) - new Date(leaveStartDate)) / 86400000) + 1;
+                  return <p style={{ margin: '-4px 0 0', fontSize: '13px', color: '#7c3aed', fontWeight: '600' }}>{days} day{days > 1 ? 's' : ''} selected</p>;
+                })()}
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Reason (optional)</label>
                   <input type="text" placeholder="e.g. Personal work, Medical, Family function" value={leaveReason} onChange={(e) => setLeaveReason(e.target.value)}
@@ -2037,25 +2070,46 @@ function AgentPortal() {
                 <p style={{ color: '#64748b', fontSize: '14px', textAlign: 'center', padding: '20px' }}>No leaves taken yet.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {leaveHistory.map((leave) => {
-                    const st = leave.status || 'approved';
-                    const badgeBg = st === 'approved' ? '#dcfce7' : st === 'rejected' ? '#fee2e2' : '#fef9c3';
-                    const badgeColor = st === 'approved' ? '#16a34a' : st === 'rejected' ? '#dc2626' : '#ca8a04';
-                    const badgeLabel = st === 'approved' ? '✓ Approved' : st === 'rejected' ? '✕ Rejected' : '⏳ Pending';
-                    return (
-                      <div key={leave.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                        <div>
-                          <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '14px' }}>
-                            {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </p>
-                          <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{leave.reason}</p>
+                  {(() => {
+                    // Group consecutive dates with same reason+status into ranges
+                    const sorted = [...leaveHistory].sort((a, b) => a.leave_date.localeCompare(b.leave_date));
+                    const groups = [];
+                    for (const leave of sorted) {
+                      const prev = groups[groups.length - 1];
+                      const prevDate = prev ? new Date(prev.endDate) : null;
+                      const curDate = new Date(leave.leave_date);
+                      const isConsecutive = prevDate && (curDate - prevDate) === 86400000;
+                      if (prev && isConsecutive && prev.reason === leave.reason && prev.status === (leave.status || 'approved')) {
+                        prev.endDate = leave.leave_date;
+                        prev.days++;
+                      } else {
+                        groups.push({ startDate: leave.leave_date, endDate: leave.leave_date, reason: leave.reason, status: leave.status || 'approved', days: 1, id: leave.id });
+                      }
+                    }
+                    return groups.reverse().map((group) => {
+                      const st = group.status;
+                      const badgeBg = st === 'approved' ? '#dcfce7' : st === 'rejected' ? '#fee2e2' : '#fef9c3';
+                      const badgeColor = st === 'approved' ? '#16a34a' : st === 'rejected' ? '#dc2626' : '#ca8a04';
+                      const badgeLabel = st === 'approved' ? '✓ Approved' : st === 'rejected' ? '✕ Rejected' : '⏳ Pending';
+                      const isSingle = group.startDate === group.endDate;
+                      const dateLabel = isSingle
+                        ? new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : `${new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(group.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                      return (
+                        <div key={group.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                          <div>
+                            <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '14px' }}>
+                              {dateLabel}{!isSingle && <span style={{ marginLeft: '8px', fontSize: '12px', color: '#7c3aed', fontWeight: '600' }}>{group.days} days</span>}
+                            </p>
+                            <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{group.reason}</p>
+                          </div>
+                          <span style={{ backgroundColor: badgeBg, color: badgeColor, padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}>
+                            {badgeLabel}
+                          </span>
                         </div>
-                        <span style={{ backgroundColor: badgeBg, color: badgeColor, padding: '4px 10px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold' }}>
-                          {badgeLabel}
-                        </span>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>
