@@ -18,15 +18,36 @@ export default function ConfirmPage() {
 
   useEffect(() => {
     const handleAuth = async () => {
-      // Get the hash from the URL
       const hash = window.location.hash;
-      
+      const search = window.location.search;
+      const queryParams = new URLSearchParams(search);
+      const code = queryParams.get('code');
+
+      // ── PKCE flow: ?code=xxx (Supabase v2 default) ──────────────────────────
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          setError('Link is invalid or has expired. Please request a new one.');
+          setStatus('set_password');
+          return;
+        }
+        const type = queryParams.get('type');
+        if (type === 'magiclink' || type === 'email') {
+          const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single();
+          if (profile?.role === 'agent') router.replace('/agent');
+          else router.replace('/dashboard');
+        } else {
+          setStatus('set_password');
+        }
+        return;
+      }
+
+      // ── Implicit flow: #access_token=xxx ────────────────────────────────────
       if (!hash) {
         router.replace('/login');
         return;
       }
 
-      // Parse the hash params
       const params = new URLSearchParams(hash.replace('#', ''));
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
@@ -37,7 +58,6 @@ export default function ConfirmPage() {
         return;
       }
 
-      // Set the session from the tokens
       const { data, error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
@@ -50,20 +70,14 @@ export default function ConfirmPage() {
       }
 
       if (type === 'magiclink') {
-        // Magic link — just log them in and redirect
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', data.user.id)
           .single();
-
-        if (profile?.role === 'agent') {
-          router.replace('/agent');
-        } else {
-          router.replace('/dashboard');
-        }
+        if (profile?.role === 'agent') router.replace('/agent');
+        else router.replace('/dashboard');
       } else {
-        // Invite or password reset — show set password form
         setStatus('set_password');
       }
     };

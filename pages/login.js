@@ -33,13 +33,19 @@ export default function LoginPage() {
         });
         if (signUpError) throw signUpError;
         if (data.user) {
-          await supabase.from('profiles').insert([{
+          await supabase.from('profiles').upsert([{
             id: data.user.id,
             full_name: fullName,
             email,
             role: 'owner'
           }]);
-          router.push('/dashboard');
+          if (data.session) {
+            // Email confirmation disabled — session is active, go straight to dashboard
+            router.push('/dashboard');
+          } else {
+            // Email confirmation required — tell the user to check their inbox
+            setForgotMessage(`✅ Account created! Check your inbox at ${email} to confirm and activate your account.`);
+          }
         }
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });

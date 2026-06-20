@@ -6,8 +6,11 @@ export default function Home() {
   
   useEffect(() => {
     const hash = window.location.hash;
+    const search = window.location.search;
     if (hash && hash.includes('access_token')) {
       router.replace('/auth/confirm' + hash);
+    } else if (search && new URLSearchParams(search).get('code')) {
+      router.replace('/auth/confirm' + search);
     } else {
       router.replace('/login');
     }
