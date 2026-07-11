@@ -577,27 +577,17 @@ function AgentPortal() {
         agent_name: profile.full_name,
         leave_date: d,
         reason,
-        status: 'approved'
+        status: 'pending'
       }));
       const { error } = await supabase.from('leaves').insert(rows);
       if (error) throw error;
-
-      // Auto-reassign pending deliveries for each date
-      let totalReassigned = 0;
-      for (const d of dates) {
-        totalReassigned += await autoReassignDeliveries(d);
-      }
 
       const isSingleDay = dates.length === 1;
       const rangeLabel = isSingleDay
         ? new Date(leaveStartDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
         : `${new Date(leaveStartDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(leaveEndDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} (${dates.length} days)`;
 
-      if (totalReassigned > 0) {
-        setLeaveMessage(`✅ Leave applied for ${rangeLabel}. ${totalReassigned} delivery bill${totalReassigned > 1 ? 's' : ''} reassigned to available agents.`);
-      } else {
-        setLeaveMessage(`✅ Leave applied for ${rangeLabel}. No pending deliveries to reassign.`);
-      }
+      setLeaveMessage(`✅ Leave request submitted for ${rangeLabel}. Waiting on owner approval.`);
       setLeaveStartDate('');
       setLeaveEndDate('');
       setLeaveReason('');
@@ -607,44 +597,6 @@ function AgentPortal() {
     } finally {
       setIsApplyingLeave(false);
     }
-  };
-
-  const autoReassignDeliveries = async (date) => {
-    const { data: myBills, error: billsErr } = await supabase
-      .from('transactions')
-      .select('id')
-      .eq('employee_name', profile.full_name)
-      .eq('status', 'approved');
-    if (billsErr) throw new Error('Could not load your bills: ' + billsErr.message);
-    if (!myBills || myBills.length === 0) return 0;
-
-    const { data: allProfiles, error: profErr } = await supabase
-      .from('profiles')
-      .select('id, full_name')
-      .eq('role', 'agent')
-      .neq('id', profile.id);
-    if (profErr) throw new Error('Could not load agents: ' + profErr.message);
-    if (!allProfiles || allProfiles.length === 0) return 0;
-
-    const { data: onLeave } = await supabase.from('leaves').select('agent_name').eq('leave_date', date);
-    const onLeaveNames = new Set((onLeave || []).map(l => l.agent_name));
-    const available = allProfiles.filter(a => !onLeaveNames.has(a.full_name));
-    if (available.length === 0) return 0;
-
-    const workloads = await Promise.all(available.map(async (agent) => {
-      const { count } = await supabase.from('transactions').select('id', { count: 'exact' }).eq('employee_name', agent.full_name).eq('status', 'approved');
-      return { ...agent, workload: count || 0 };
-    }));
-    workloads.sort((a, b) => a.workload - b.workload);
-
-    let reassigned = 0;
-    for (let i = 0; i < myBills.length; i++) {
-      const assignTo = workloads[i % workloads.length];
-      const { error: updateErr } = await supabase.from('transactions').update({ employee_name: assignTo.full_name }).eq('id', myBills[i].id);
-      if (updateErr) throw new Error(`Failed to reassign bill: ${updateErr.message}`);
-      reassigned++;
-    }
-    return reassigned;
   };
 
   const handleDeliveryShopSelect = async (shop) => {
