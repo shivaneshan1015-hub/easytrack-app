@@ -578,7 +578,7 @@ function OwnerDashboard() {
   async function loadAttendance(date) {
     const [{ data: attData }, { data: leaveData }] = await Promise.all([
       supabase.from('attendance').select('agent_name, marked_at, note').eq('date', date),
-      supabase.from('leaves').select('agent_name').eq('leave_date', date),
+      supabase.from('leaves').select('agent_name').eq('leave_date', date).eq('status', 'approved'),
     ]);
     setAttendance(attData || []);
     setAttendanceLeaves(leaveData || []);
@@ -1186,6 +1186,7 @@ function OwnerDashboard() {
       .from('leaves')
       .select('leave_date, reason')
       .eq('agent_name', agent.full_name)
+      .eq('status', 'approved')
       .order('leave_date', { ascending: false });
 
     // Calculate working days this month
