@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth, withAuth } from '../hooks/useAuth';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
@@ -112,7 +112,10 @@ function OwnerDashboard() {
   const [inviteMessage, setInviteMessage] = useState('');
   const [agentsList, setAgentsList] = useState([]);
   const [isDeletingAgent, setIsDeletingAgent] = useState(null);
-  const [leaveNotifications, setLeaveNotifications] = useState([]);
+  const [pendingLeaveRequests, setPendingLeaveRequests] = useState([]);
+  const [allLeaveRequests, setAllLeaveRequests] = useState([]);
+  const [leaveAgentFilter, setLeaveAgentFilter] = useState('all');
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState('all');
   const [selectedAgentProfile, setSelectedAgentProfile] = useState(null);
   const [agentProfileData, setAgentProfileData] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -223,6 +226,8 @@ function OwnerDashboard() {
     setActiveTab(tab);
     if (isMobile) setSidebarOpen(false);
   };
+
+  const overdueRef = useRef(null);
 
   const addToast = (message) => {
     const id = Date.now();
@@ -692,12 +697,13 @@ function OwnerDashboard() {
     setSelectedAgentForOrder('');
     setDeliveryForm(null);
     setCollectForm(null);
+    loadPendingLeaveRequests();
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); loadCreditAlerts(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
     else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'shops') loadShops();
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadLeaveNotifications(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadAllLeaveRequests(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -1106,17 +1112,60 @@ function OwnerDashboard() {
     finally { setIsUpdating(false); }
   };
 
-  async function loadLeaveNotifications() {
-    const today = new Date().toISOString().split('T')[0];
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 7);
+  async function loadPendingLeaveRequests() {
     const { data } = await supabase
       .from('leaves')
       .select('*')
-      .gte('leave_date', today)
-      .lte('leave_date', nextWeek.toISOString().split('T')[0])
+      .eq('status', 'pending')
       .order('leave_date', { ascending: true });
-    if (data) setLeaveNotifications(data);
+    if (data) setPendingLeaveRequests(data);
+  }
+
+  async function loadAllLeaveRequests() {
+    const { data } = await supabase
+      .from('leaves')
+      .select('*')
+      .order('leave_date', { ascending: false });
+    if (data) setAllLeaveRequests(data);
+  }
+
+  async function reassignDeliveriesForLeave(agentName, agentId, date) {
+    const { data: bills } = await supabase.from('transactions').select('id').eq('employee_name', agentName).eq('status', 'approved');
+    if (!bills || bills.length === 0) return 0;
+    const { data: allProfiles } = await supabase.from('profiles').select('id, full_name').eq('role', 'agent').neq('id', agentId);
+    if (!allProfiles || allProfiles.length === 0) return 0;
+    const { data: onLeave } = await supabase.from('leaves').select('agent_name').eq('leave_date', date).eq('status', 'approved');
+    const onLeaveNames = new Set((onLeave || []).map(l => l.agent_name));
+    const available = allProfiles.filter(a => !onLeaveNames.has(a.full_name));
+    if (available.length === 0) return 0;
+    const workloads = await Promise.all(available.map(async (agent) => {
+      const { count } = await supabase.from('transactions').select('id', { count: 'exact' }).eq('employee_name', agent.full_name).eq('status', 'approved');
+      return { ...agent, workload: count || 0 };
+    }));
+    workloads.sort((a, b) => a.workload - b.workload);
+    let reassigned = 0;
+    for (let i = 0; i < bills.length; i++) {
+      const assignTo = workloads[i % workloads.length];
+      await supabase.from('transactions').update({ employee_name: assignTo.full_name }).eq('id', bills[i].id);
+      reassigned++;
+    }
+    return reassigned;
+  }
+
+  async function handleLeaveAction(group, newStatus) {
+    const { error } = await supabase.from('leaves').update({ status: newStatus }).in('id', group.ids);
+    if (error) { addToast('❌ ' + error.message); return; }
+    if (newStatus === 'approved') {
+      let totalReassigned = 0;
+      const cur = new Date(group.startDate), end = new Date(group.endDate);
+      while (cur <= end) {
+        totalReassigned += await reassignDeliveriesForLeave(group.agent_name, group.agent_id, cur.toISOString().slice(0, 10));
+        cur.setDate(cur.getDate() + 1);
+      }
+      addToast(`✅ Approved ${group.agent_name}'s leave. ${totalReassigned} bill${totalReassigned === 1 ? '' : 's'} reassigned.`);
+    }
+    loadAllLeaveRequests();
+    loadPendingLeaveRequests();
   }
 
   async function loadAgentProfile(agent) {
@@ -1349,13 +1398,13 @@ function OwnerDashboard() {
       <aside style={{ width: '260px', backgroundColor: '#0f172a', padding: '25px', color: '#ffffff', display: 'flex', flexDirection: 'column', flexShrink: 0, ...(isMobile ? { position: 'fixed', top: 0, left: sidebarOpen ? 0 : '-280px', height: '100vh', zIndex: 50, transition: 'left 0.25s ease', overflowY: 'auto' } : {}) }} className="no-print">
         <h2 style={{ margin: '0 0 5px', fontSize: '22px', fontWeight: 'bold' }}>EasyTrack</h2>
         <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '20px' }}>HQ Control Room</span>
-        {leaveNotifications.length > 0 && (
+        {pendingLeaveRequests.length > 0 && (
           <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => setActiveTab('admin')}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ backgroundColor: '#7c3aed', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{leaveNotifications.length}</span>
+              <span style={{ backgroundColor: '#7c3aed', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{pendingLeaveRequests.length}</span>
               <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c4b5fd' }}>Leave Requests</span>
             </div>
-            {leaveNotifications.slice(0, 3).map((leave, i) => (
+            {pendingLeaveRequests.slice(0, 3).map((leave, i) => (
               <div key={i} style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
                 🏖️ {leave.agent_name} — {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
               </div>
@@ -1363,7 +1412,7 @@ function OwnerDashboard() {
           </div>
         )}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
-          <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>⏳ Pending Orders</div>
+          <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>
           <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatched Ledger</div>
           <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
           <div onClick={() => handleNavClick('map')} style={tabStyle('map')}>🗺️ Shop Directory</div>
@@ -1385,7 +1434,7 @@ function OwnerDashboard() {
             <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px 6px', color: '#1e293b', flexShrink: 0, lineHeight: 1 }}>☰</button>
           )}
           <h1 style={{ margin: '0', fontSize: isMobile ? '20px' : '28px', fontWeight: 'bold', color: '#1e293b' }}>
-            {activeTab === 'pending' && 'Pending Orders'}
+            {activeTab === 'pending' && 'Today'}
             {activeTab === 'history' && 'Dispatched Ledger'}
             {activeTab === 'finance' && 'Financial Insights'}
             {activeTab === 'map' && 'Shop Directory'}
@@ -1447,7 +1496,7 @@ function OwnerDashboard() {
                   <p style={{ margin: '0 0 18px', fontSize: '16px', color: '#94a3b8' }}>
                     {briefing.greeting}, <strong style={{ color: '#f8fafc' }}>{profile?.full_name?.split(' ')[0] || 'there'}</strong> 👋
                   </p>
-                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: briefing.urgent.length > 0 ? '20px' : '0' }}>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                     <div style={{ flex: 1, minWidth: '120px', backgroundColor: '#1e293b', borderRadius: '8px', padding: '14px 16px' }}>
                       <p style={{ margin: '0 0 6px', fontSize: '11px', color: '#64748b', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Dispatched</p>
                       <p style={{ margin: '0', fontSize: '26px', fontWeight: 'bold', color: '#38bdf8' }}>{briefing.dispatchedCount}</p>
@@ -1464,21 +1513,36 @@ function OwnerDashboard() {
                       <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#475569' }}>from {briefing.uniqueShops} shop{briefing.uniqueShops !== 1 ? 's' : ''}</p>
                     </div>
                   </div>
-                  {briefing.urgent.length > 0 && (
-                    <div style={{ backgroundColor: '#450a0a', border: '1px solid #7f1d1d', borderRadius: '8px', padding: '14px 16px' }}>
-                      <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: 'bold', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        🔴 Overdue 15+ days — needs follow-up
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {briefing.urgent.map((b, i) => (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
-                            <span style={{ color: '#fecaca' }}>{b.shops?.name || 'Unknown Shop'}</span>
-                            <span style={{ color: '#fca5a5', fontWeight: 'bold' }}>₹{parseFloat(b.pending_amount).toLocaleString('en-IN')}</span>
-                          </div>
-                        ))}
+                </div>
+              )}
+
+              {/* ── QUICK ACTIONS ── */}
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <a href="/agent" style={{ padding: '10px 18px', backgroundColor: '#2563eb', color: '#fff', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
+                  ➕ New Order
+                </a>
+                <button onClick={() => handleNavClick('history')} style={{ padding: '10px 18px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                  💵 Log Payment
+                </button>
+                <button onClick={() => overdueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} style={{ padding: '10px 18px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                  🔴 View Overdue
+                </button>
+              </div>
+
+              {/* ── OVERDUE PANEL ── */}
+              {briefing && briefing.urgent.length > 0 && (
+                <div ref={overdueRef} style={{ backgroundColor: '#450a0a', border: '1px solid #7f1d1d', borderRadius: '8px', padding: '14px 16px' }}>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', fontWeight: 'bold', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    🔴 Overdue 15+ days — needs follow-up
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {briefing.urgent.map((b, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                        <span style={{ color: '#fecaca' }}>{b.shops?.name || 'Unknown Shop'}</span>
+                        <span style={{ color: '#fca5a5', fontWeight: 'bold' }}>₹{parseFloat(b.pending_amount).toLocaleString('en-IN')}</span>
                       </div>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2748,26 +2812,119 @@ function OwnerDashboard() {
                   </div>
                 </div>
 
-                {/* 2. Upcoming Leaves */}
-                {leaveNotifications.length > 0 && (
-                  <div style={{ backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '8px', padding: '24px' }}>
-                    <h3 style={{ margin: '0 0 6px', fontSize: '18px' }}>🏖️ Upcoming Agent Leaves</h3>
-                    <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b' }}>Agents on leave in the next 7 days. Deliveries have been auto-reassigned.</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {leaveNotifications.map((leave, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e9d5ff' }}>
-                          <div>
-                            <p style={{ margin: '0 0 2px', fontWeight: 'bold', fontSize: '14px' }}>{leave.agent_name}</p>
-                            <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{leave.reason}</p>
-                          </div>
-                          <span style={{ backgroundColor: '#ede9fe', color: '#7c3aed', padding: '6px 12px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>
-                            {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                          </span>
+                {/* 2. Leave Requests */}
+                {(() => {
+                  // Group consecutive dates with same agent+reason+status into ranges (mirrors agent-side Leave History grouping)
+                  const sorted = [...allLeaveRequests].sort((a, b) => a.agent_id === b.agent_id ? a.leave_date.localeCompare(b.leave_date) : (a.agent_name || '').localeCompare(b.agent_name || ''));
+                  const groups = [];
+                  for (const leave of sorted) {
+                    const prev = groups[groups.length - 1];
+                    const prevDate = prev ? new Date(prev.endDate) : null;
+                    const curDate = new Date(leave.leave_date);
+                    const isConsecutive = prevDate && (curDate - prevDate) === 86400000;
+                    if (prev && isConsecutive && prev.agent_id === leave.agent_id && prev.reason === leave.reason && prev.status === leave.status) {
+                      prev.endDate = leave.leave_date;
+                      prev.days++;
+                      prev.ids.push(leave.id);
+                    } else {
+                      groups.push({ agent_id: leave.agent_id, agent_name: leave.agent_name, reason: leave.reason, status: leave.status, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id] });
+                    }
+                  }
+                  groups.reverse();
+
+                  const agentNames = [...new Set(allLeaveRequests.map(l => l.agent_name))].sort();
+                  const filteredGroups = groups.filter(g =>
+                    (leaveAgentFilter === 'all' || g.agent_name === leaveAgentFilter) &&
+                    (leaveStatusFilter === 'all' || g.status === leaveStatusFilter)
+                  );
+                  const pendingCount = groups.filter(g => g.status === 'pending').length;
+                  const approvedCount = groups.filter(g => g.status === 'approved').length;
+
+                  return (
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                        <h3 style={{ margin: 0, fontSize: '18px' }}>🏖️ Leave Requests</h3>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <select value={leaveAgentFilter} onChange={e => setLeaveAgentFilter(e.target.value)}
+                            style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
+                            <option value="all">All Agents</option>
+                            {agentNames.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                          <select value={leaveStatusFilter} onChange={e => setLeaveStatusFilter(e.target.value)}
+                            style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
+                            <option value="all">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                          </select>
                         </div>
-                      ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        {[
+                          { label: '⏳ Pending', value: pendingCount, color: '#ca8a04', bg: '#fef9c3' },
+                          { label: '✓ Approved', value: approvedCount, color: '#16a34a', bg: '#dcfce7' },
+                          { label: '📦 Total Requests', value: groups.length, color: '#64748b', bg: '#f1f5f9' },
+                        ].map(item => (
+                          <div key={item.label} style={{ flex: 1, minWidth: '120px', padding: '14px', backgroundColor: item.bg, borderRadius: '8px' }}>
+                            <span style={{ fontSize: '12px', color: '#64748b' }}>{item.label}</span>
+                            <strong style={{ display: 'block', fontSize: '18px', color: item.color, marginTop: '4px' }}>{item.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                      {filteredGroups.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No leave requests found.</p>
+                      ) : (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Dates</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Reason</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Status</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Action</th>
+                            </tr></thead>
+                            <tbody>{filteredGroups.map(group => {
+                              const isPending = group.status === 'pending';
+                              const isApproved = group.status === 'approved';
+                              const isSingle = group.startDate === group.endDate;
+                              const dateLabel = isSingle
+                                ? new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : `${new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(group.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                              return (
+                                <tr key={group.ids[0]} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '10px 12px', color: '#0f172a' }}>
+                                    {dateLabel}{!isSingle && <span style={{ marginLeft: '8px', fontSize: '12px', color: '#7c3aed', fontWeight: '600' }}>{group.days} days</span>}
+                                  </td>
+                                  <td style={{ padding: '10px 12px', fontWeight: '500' }}>{group.agent_name}</td>
+                                  <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.reason || '—'}</td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
+                                      {isApproved ? '✓ Approved' : isPending ? '⏳ Pending' : '✕ Rejected'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                    {isPending && (
+                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                        <button onClick={() => handleLeaveAction(group, 'approved')}
+                                          style={{ padding: '5px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✓ Approve</button>
+                                        <button onClick={() => handleLeaveAction(group, 'rejected')}
+                                          style={{ padding: '5px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✕ Reject</button>
+                                      </div>
+                                    )}
+                                    {!isPending && (
+                                      <button onClick={() => handleLeaveAction(group, 'pending')}
+                                        style={{ padding: '5px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>Undo</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}</tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* ── ATTENDANCE ── */}
                 {(() => {
