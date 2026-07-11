@@ -561,6 +561,7 @@ function AgentPortal() {
         .from('leaves')
         .select('leave_date')
         .eq('agent_id', profile.id)
+        .neq('status', 'rejected')
         .in('leave_date', dates);
 
       if (existing && existing.length > 0) {
