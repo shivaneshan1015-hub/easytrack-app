@@ -6,7 +6,6 @@ function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('booking');
 
-  const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [billNumber, setBillNumber] = useState('');
 
@@ -477,8 +476,6 @@ function AgentPortal() {
   }
 
   async function loadInitialData() {
-    const { data: empData } = await supabase.from('employees').select('name');
-    if (empData) setEmployees(empData);
     const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude, phone_number');
     if (shopData) setShops(shopData);
     const { data: prodData } = await supabase.from('products').select('id, name, unit_price').eq('is_active', true);
@@ -826,7 +823,7 @@ function AgentPortal() {
 
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
-    if (!selectedEmployee) return alert('Please choose your name.');
+    if (!profile?.full_name) return alert('Your profile could not be loaded. Please refresh and try again.');
     if (orderItems.some(item => !item.productId)) return alert('Please select a product for every row.');
     setIsSubmitting(true);
     let targetShopId = selectedShop;
@@ -871,7 +868,7 @@ function AgentPortal() {
         }
       }
       const { data: txData, error: txErr } = await supabase.from('transactions')
-        .insert([{ bill_number: billNumber, shop_id: targetShopId, employee_name: selectedEmployee, status: 'draft', bill_amount: cumulativeBillSum }])
+        .insert([{ bill_number: billNumber, shop_id: targetShopId, employee_name: profile.full_name, status: 'draft', bill_amount: cumulativeBillSum }])
         .select().single();
       if (txErr) {
         // Trigger fires 'credit_limit_exceeded'; human detail is in hint
@@ -999,12 +996,9 @@ function AgentPortal() {
               );
             })()}
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>Select Your Name</label>
-              <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} disabled={profile?.role === 'agent'}
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '16px', backgroundColor: profile?.role === 'agent' ? '#f8fafc' : '#ffffff', color: '#0f172a' }}>
-                <option value="">-- Choose Employee --</option>
-                {employees.map((emp, idx) => <option key={idx} value={emp.name}>{emp.name}</option>)}
-              </select>
+              <p style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>
+                {(() => { const hour = new Date().getHours(); return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'; })()}, {profile?.full_name?.split(' ')[0] || 'there'}
+              </p>
             </div>
 
             <div style={{ backgroundColor: '#f8fafc', padding: '15px', borderRadius: '8px', marginBottom: '25px', border: '1px dashed #cbd5e1' }}>
