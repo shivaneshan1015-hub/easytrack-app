@@ -2302,21 +2302,27 @@ function OwnerDashboard() {
             ) : activeTab === 'shops' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
                 {/* ── LIST / MAP TOGGLE ── */}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {[
-                    { key: 'list', label: 'List View' },
-                    { key: 'map', label: 'Map View' },
-                  ].map(v => (
-                    <button key={v.key} onClick={() => setShopsViewMode(v.key)}
-                      style={{
-                        padding: '8px 20px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer',
-                        border: '1.5px solid ' + (shopsViewMode === v.key ? '#2563eb' : '#e2e8f0'),
-                        backgroundColor: shopsViewMode === v.key ? '#2563eb' : '#ffffff',
-                        color: shopsViewMode === v.key ? '#ffffff' : '#475569',
-                      }}>
-                      {v.label}
-                    </button>
-                  ))}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[
+                      { key: 'list', label: 'List View' },
+                      { key: 'map', label: 'Map View' },
+                    ].map(v => (
+                      <button key={v.key} onClick={() => setShopsViewMode(v.key)}
+                        style={{
+                          padding: '8px 20px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer',
+                          border: '1.5px solid ' + (shopsViewMode === v.key ? '#2563eb' : '#e2e8f0'),
+                          backgroundColor: shopsViewMode === v.key ? '#2563eb' : '#ffffff',
+                          color: shopsViewMode === v.key ? '#ffffff' : '#475569',
+                        }}>
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => handleNavClick('routes')}
+                    style={{ padding: '8px 20px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: '#7c3aed', color: '#ffffff' }}>
+                    🗺️ Plan Routes
+                  </button>
                 </div>
 
                 {shopsViewMode === 'list' ? (
@@ -3965,18 +3971,20 @@ function OwnerDashboard() {
       {isMobile && (
         <nav className="no-print" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#0f172a', borderTop: '1px solid #1e293b', display: 'flex', zIndex: 45, paddingBottom: 'env(safe-area-inset-bottom)' }}>
           {[
-            { tab: 'pending',  icon: '⏳', label: 'Orders'    },
-            { tab: 'history',  icon: '📜', label: 'Ledger'    },
-            { tab: 'finance',  icon: '📈', label: 'Finance'   },
-            { tab: 'map',      icon: '🗺️', label: 'Directory' },
-            { tab: 'shops',    icon: '🏪', label: 'Shops'     },
-            { tab: 'settings', icon: '⚙️', label: 'Settings'  },
-          ].map(({ tab, icon, label }) => (
-            <button key={tab} onClick={() => handleNavClick(tab)} style={{ flex: 1, padding: '8px 2px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', color: activeTab === tab ? '#38bdf8' : '#64748b', borderTop: `2px solid ${activeTab === tab ? '#38bdf8' : 'transparent'}`, transition: 'color 0.15s' }}>
-              <span style={{ fontSize: '17px', lineHeight: 1 }}>{icon}</span>
-              <span style={{ fontSize: '9px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{label}</span>
-            </button>
-          ))}
+            { tab: 'pending',  icon: '🏠', label: 'Today'    },
+            { tab: 'history',  icon: '🚚', label: 'Dispatch' },
+            { tab: 'finance',  icon: '📊', label: 'Finance'  },
+            { tab: 'shops',    icon: '🏪', label: 'Shops'    },
+            { tab: 'settings', icon: '⚙️', label: 'Settings' },
+          ].map(({ tab, icon, label }) => {
+            const isActive = activeTab === tab;
+            return (
+              <button key={tab} onClick={() => handleNavClick(tab)} style={{ flex: 1, minHeight: '48px', boxSizing: 'border-box', padding: '6px 2px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', cursor: 'pointer', color: isActive ? '#38bdf8' : '#64748b', borderTop: `2px solid ${isActive ? '#38bdf8' : 'transparent'}`, transition: 'color 0.15s' }}>
+                <span style={{ fontSize: isActive ? '19px' : '17px', lineHeight: 1, padding: '2px 10px', borderRadius: '10px', backgroundColor: isActive ? 'rgba(56,189,248,0.15)' : 'transparent', transition: 'all 0.15s' }}>{icon}</span>
+                <span style={{ fontSize: '10px', fontWeight: isActive ? '700' : '600', whiteSpace: 'nowrap' }}>{label}</span>
+              </button>
+            );
+          })}
         </nav>
       )}
 
