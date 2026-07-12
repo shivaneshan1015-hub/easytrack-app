@@ -169,6 +169,7 @@ function OwnerDashboard() {
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
   const [shopDirSearch, setShopDirSearch] = useState('');
   const [shopsViewMode, setShopsViewMode] = useState('list');
+  const [settingsSubTab, setSettingsSubTab] = useState('team');
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [ledgerStatusFilter, setLedgerStatusFilter] = useState('all');
   const [ledgerAgentFilter, setLedgerAgentFilter] = useState('all');
@@ -705,8 +706,7 @@ function OwnerDashboard() {
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
     else if (activeTab === 'shops') { loadShops(); loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'routes') { loadBeatPlan(); loadShops(); loadActiveAgentsList(); loadRouteMapLocations(); }
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadAllLeaveRequests(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); }
-    else if (activeTab === 'invoice') loadInvoiceSettings();
+    else if (activeTab === 'settings') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadAllLeaveRequests(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); loadInvoiceSettings(); }
   }, [activeTab]);
 
   const handleSaveInvoiceSettings = async () => {
@@ -1427,7 +1427,7 @@ function OwnerDashboard() {
         <h2 style={{ margin: '0 0 5px', fontSize: '22px', fontWeight: 'bold' }}>EasyTrack</h2>
         <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '20px' }}>HQ Control Room</span>
         {pendingLeaveRequests.length > 0 && (
-          <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => setActiveTab('admin')}>
+          <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => { setActiveTab('settings'); setSettingsSubTab('team'); }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <span style={{ backgroundColor: '#7c3aed', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{pendingLeaveRequests.length}</span>
               <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c4b5fd' }}>Leave Requests</span>
@@ -1445,9 +1445,8 @@ function OwnerDashboard() {
           <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
           <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shops</div>
           <div onClick={() => handleNavClick('routes')} style={tabStyle('routes')}>🗺️ Routes</div>
-          <div onClick={() => handleNavClick('invoice')} style={tabStyle('invoice')}>🧾 Invoice Settings</div>
-          <div onClick={() => handleNavClick('admin')} style={tabStyle('admin')}>👥 Management Panel</div>
         </nav>
+        <div onClick={() => handleNavClick('settings')} style={{ ...tabStyle('settings'), marginTop: '8px' }}>⚙️ Settings</div>
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: '20px', marginTop: '20px' }}>
           <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 'bold', color: '#f8fafc' }}>{profile?.full_name || 'Owner'}</p>
           <p style={{ margin: '0 0 14px', fontSize: '11px', color: '#64748b' }}>{profile?.email}</p>
@@ -1467,8 +1466,7 @@ function OwnerDashboard() {
             {activeTab === 'finance' && 'Financial Insights'}
             {activeTab === 'shops' && 'Shops'}
             {activeTab === 'routes' && 'Routes'}
-            {activeTab === 'invoice' && 'Invoice Settings'}
-            {activeTab === 'admin' && 'Management Panel'}
+            {activeTab === 'settings' && 'Settings'}
           </h1>
         </header>
 
@@ -2730,373 +2728,384 @@ function OwnerDashboard() {
 
               </div>
 
-            ) : activeTab === 'invoice' ? (
-              /* ── INVOICE SETTINGS ── */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '800px' }}>
+            ) : activeTab === 'settings' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
 
-                {/* Template Mode Selector */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 8px 0', fontSize: '18px' }}>Choose Invoice Style</h3>
-                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Select how your invoice will look when printed.</p>
-                  <div style={{ display: 'flex', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
-                    <div
-                      onClick={() => setInvoiceSettings({ ...invoiceSettings, template_mode: 'custom' })}
-                      style={{ flex: 1, padding: '20px', borderRadius: '8px', border: `2px solid ${invoiceSettings.template_mode === 'custom' ? '#2563eb' : '#e2e8f0'}`, cursor: 'pointer', backgroundColor: invoiceSettings.template_mode === 'custom' ? '#eff6ff' : '#ffffff', transition: 'all 0.2s' }}
-                    >
-                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>🎨</div>
-                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: invoiceSettings.template_mode === 'custom' ? '#1d4ed8' : '#0f172a' }}>Option B — Create My Own</h4>
-                      <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Fill in your company details. We generate a professional invoice automatically.</p>
-                    </div>
-                    <div
-                      onClick={() => setInvoiceSettings({ ...invoiceSettings, template_mode: 'upload' })}
-                      style={{ flex: 1, padding: '20px', borderRadius: '8px', border: `2px solid ${invoiceSettings.template_mode === 'upload' ? '#2563eb' : '#e2e8f0'}`, cursor: 'pointer', backgroundColor: invoiceSettings.template_mode === 'upload' ? '#eff6ff' : '#ffffff', transition: 'all 0.2s' }}
-                    >
-                      <div style={{ fontSize: '28px', marginBottom: '8px' }}>📄</div>
-                      <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: invoiceSettings.template_mode === 'upload' ? '#1d4ed8' : '#0f172a' }}>Option A — Upload Letterhead</h4>
-                      <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Upload your own company letterhead image. Invoice data prints on top of it.</p>
-                    </div>
-                  </div>
+                {/* ── TEAM / PRODUCTS / INVOICE TOGGLE ── */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {[
+                    { key: 'team', label: 'Team' },
+                    { key: 'products', label: 'Products' },
+                    { key: 'invoice', label: 'Invoice' },
+                  ].map(t => (
+                    <button key={t.key} onClick={() => setSettingsSubTab(t.key)}
+                      style={{
+                        padding: '8px 20px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer',
+                        border: '1.5px solid ' + (settingsSubTab === t.key ? '#2563eb' : '#e2e8f0'),
+                        backgroundColor: settingsSubTab === t.key ? '#2563eb' : '#ffffff',
+                        color: settingsSubTab === t.key ? '#ffffff' : '#475569',
+                      }}>
+                      {t.label}
+                    </button>
+                  ))}
                 </div>
 
-                {/* Option B — Custom Details */}
-                {invoiceSettings.template_mode === 'custom' && (
-                  <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                    <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Company Details</h3>
-                    <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: '#64748b' }}>These details will appear on every printed invoice.</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {settingsSubTab === 'team' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
 
-                      {/* Logo Upload */}
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>Company Logo (optional)</label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                          {invoiceSettings.logo_url && invoiceSettings.template_mode === 'custom' && (
-                            <img src={invoiceSettings.logo_url} alt="Logo" style={{ height: '50px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '4px' }} />
-                          )}
-                          <label style={{ padding: '10px 20px', backgroundColor: '#f1f5f9', border: '1.5px dashed #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', color: '#475569' }}>
-                            {isUploadingLogo ? '⏳ Uploading...' : '📁 Upload Logo (PNG/JPG/SVG)'}
-                            <input type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" onChange={handleLogoUpload} style={{ display: 'none' }} />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Company Name</label>
-                        <input type="text" value={invoiceSettings.company_name || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, company_name: e.target.value })}
-                          placeholder="e.g. Sri Murugan Distributors"
-                          style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Address</label>
-                        <textarea value={invoiceSettings.address || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, address: e.target.value })}
-                          placeholder="e.g. 45, Main Road, Madurai - 625001, Tamil Nadu"
-                          rows={2}
-                          style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'sans-serif' }} />
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '16px' }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Phone Number</label>
-                          <input type="tel" value={invoiceSettings.phone || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, phone: e.target.value })}
-                            placeholder="9876543210"
-                            style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>GST Number (optional)</label>
-                          <input type="text" value={invoiceSettings.gst_number || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, gst_number: e.target.value })}
-                            placeholder="33XXXXX1234X1ZX"
-                            style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>UPI ID <span style={{ fontWeight: 'normal', color: '#64748b' }}>(for QR payments)</span></label>
-                        <input type="text" value={invoiceSettings.upi_id || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, upi_id: e.target.value })}
-                          placeholder="e.g. 9876543210@okicici or name@upi"
-                          style={{ width: '100%', padding: '10px 14px', border: `1.5px solid ${invoiceSettings.upi_id ? '#16a34a' : '#cbd5e1'}`, borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
-                        {invoiceSettings.upi_id && (
-                          <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#16a34a' }}>✅ Agents will see a UPI QR code when collecting payments</p>
-                        )}
+                    {/* 1. Invite New Agent */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Invite New Agent</h3>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Agent receives email invitation to set password and log in.</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '500px' }}>
+                        <input type="text" placeholder="Agent Full Name" value={newAgentName} onChange={(e) => setNewAgentName(e.target.value)}
+                          style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
+                        <input type="email" placeholder="Agent Email" value={newAgentEmail} onChange={(e) => setNewAgentEmail(e.target.value)}
+                          style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
+                        <button onClick={handleInviteAgent} disabled={isAddingAgent}
+                          style={{ padding: '12px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: isAddingAgent ? 0.7 : 1 }}>
+                          {isAddingAgent ? 'Sending...' : '✉️ Send Invitation'}
+                        </button>
+                        {inviteMessage && <p style={{ margin: '0', fontSize: '13px', color: inviteMessage.includes('✅') ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{inviteMessage}</p>}
                       </div>
                     </div>
-                  </div>
-                )}
 
-                {/* Option A — Upload Letterhead */}
-                {invoiceSettings.template_mode === 'upload' && (
-                  <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                    <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Upload Your Letterhead</h3>
-                    <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: '#64748b' }}>Upload your company letterhead as an image (PNG/JPG). Invoice data will be printed over it. Recommended size: A4 (2480 x 3508 px).</p>
-
-                    <label style={{ display: 'block', padding: '30px', backgroundColor: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', cursor: 'pointer', textAlign: 'center' }}>
-                      {isUploadingLetterhead ? (
-                        <p style={{ margin: '0', color: '#64748b', fontSize: '14px' }}>⏳ Uploading...</p>
-                      ) : letterheadUrl ? (
-                        <div>
-                          <img src={letterheadUrl} alt="Letterhead Preview" style={{ maxHeight: '200px', maxWidth: '100%', objectFit: 'contain', borderRadius: '4px', marginBottom: '12px' }} />
-                          <p style={{ margin: '0', fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>✅ Letterhead uploaded — click to replace</p>
-                        </div>
-                      ) : (
-                        <div>
-                          <p style={{ margin: '0 0 8px 0', fontSize: '32px' }}>📄</p>
-                          <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold', color: '#475569' }}>Click to upload letterhead</p>
-                          <p style={{ margin: '0', fontSize: '12px', color: '#94a3b8' }}>PNG or JPG — max 50MB</p>
-                        </div>
-                      )}
-                      <input type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleLetterheadUpload} style={{ display: 'none' }} />
-                    </label>
-
-                    {letterheadUrl && (
-                      <div style={{ marginTop: '16px', padding: '12px 16px', backgroundColor: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '6px', fontSize: '13px', color: '#92400e' }}>
-                        ⚠️ When printing, your letterhead will appear as a background. Make sure your letterhead has enough white space for the invoice data to be readable.
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Save Button */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <button onClick={handleSaveInvoiceSettings} disabled={isSavingSettings}
-                    style={{ padding: '14px 32px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: isSavingSettings ? 'not-allowed' : 'pointer', opacity: isSavingSettings ? 0.7 : 1 }}>
-                    {isSavingSettings ? 'Saving...' : '💾 Save Invoice Settings'}
-                  </button>
-                  {settingsSaved && (
-                    <span style={{ fontSize: '14px', color: settingsSaved.includes('✅') ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{settingsSaved}</span>
-                  )}
-                </div>
-
-                {/* SMTP / Email */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>📧 Email Settings</h3>
-                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>
-                    To enable emailing invoices, set <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_HOST</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_USER</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_PASS</code>, and <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_FROM</code> in your <strong>.env.local</strong> file and restart the server. Gmail works out of the box with an App Password.
-                  </p>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: '240px' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Send a test email to</label>
-                      <input
-                        type="email"
-                        placeholder="you@example.com"
-                        value={smtpTestEmail}
-                        onChange={e => { setSmtpTestEmail(e.target.value); setSmtpTestResult(''); }}
-                        style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }}
-                      />
-                    </div>
-                    <button
-                      disabled={isSendingTestEmail || !smtpTestEmail.trim()}
-                      onClick={async () => {
-                        setIsSendingTestEmail(true);
-                        setSmtpTestResult('');
-                        try {
-                          const { data: { session } } = await supabase.auth.getSession();
-                          const res = await fetch('/api/email/test', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || ''}` },
-                            body: JSON.stringify({ testEmail: smtpTestEmail.trim() }),
-                          });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error);
-                          setSmtpTestResult('✅ Test email sent! Check your inbox.');
-                        } catch (err) {
-                          setSmtpTestResult('❌ ' + err.message);
-                        } finally {
-                          setIsSendingTestEmail(false);
+                    {/* 2. Leave Requests */}
+                    {(() => {
+                      // Group consecutive dates with same agent+reason+status into ranges (mirrors agent-side Leave History grouping)
+                      const sorted = [...allLeaveRequests].sort((a, b) => a.agent_id === b.agent_id ? a.leave_date.localeCompare(b.leave_date) : (a.agent_name || '').localeCompare(b.agent_name || ''));
+                      const groups = [];
+                      for (const leave of sorted) {
+                        const prev = groups[groups.length - 1];
+                        const prevDate = prev ? new Date(prev.endDate) : null;
+                        const curDate = new Date(leave.leave_date);
+                        const isConsecutive = prevDate && (curDate - prevDate) === 86400000;
+                        if (prev && isConsecutive && prev.agent_id === leave.agent_id && prev.reason === leave.reason && prev.status === leave.status) {
+                          prev.endDate = leave.leave_date;
+                          prev.days++;
+                          prev.ids.push(leave.id);
+                        } else {
+                          groups.push({ agent_id: leave.agent_id, agent_name: leave.agent_name, reason: leave.reason, status: leave.status, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id] });
                         }
-                      }}
-                      style={{ padding: '10px 22px', backgroundColor: isSendingTestEmail ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: isSendingTestEmail ? 'not-allowed' : 'pointer', height: '42px', whiteSpace: 'nowrap' }}
-                    >
-                      {isSendingTestEmail ? 'Sending...' : '📤 Send Test'}
-                    </button>
-                  </div>
-                  {smtpTestResult && (
-                    <p style={{ margin: '12px 0 0', fontSize: '13px', fontWeight: '500', color: smtpTestResult.includes('✅') ? '#16a34a' : '#dc2626' }}>
-                      {smtpTestResult}
-                    </p>
-                  )}
-                </div>
+                      }
+                      groups.reverse();
 
-                {/* Live Preview */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', color: '#475569' }}>🔍 Invoice Preview</h3>
-                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '30px', backgroundColor: '#fafafa', fontSize: '12px', fontFamily: 'Arial, sans-serif' }}>
-                    {invoiceSettings.template_mode === 'upload' && letterheadUrl ? (
-                      <div style={{ position: 'relative' }}>
-                        <img src={letterheadUrl} alt="Letterhead" style={{ width: '100%', opacity: 0.3, borderRadius: '4px' }} />
-                        <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                            <div><strong style={{ fontSize: '14px' }}>DELIVERY INVOICE</strong></div>
-                            <div style={{ textAlign: 'right', fontSize: '11px' }}><div>Bill No: ET-2026-482931-847</div><div>Date: {new Date().toLocaleDateString('en-IN')}</div></div>
+                      const agentNames = [...new Set(allLeaveRequests.map(l => l.agent_name))].sort();
+                      const filteredGroups = groups.filter(g =>
+                        (leaveAgentFilter === 'all' || g.agent_name === leaveAgentFilter) &&
+                        (leaveStatusFilter === 'all' || g.status === leaveStatusFilter)
+                      );
+                      const pendingCount = groups.filter(g => g.status === 'pending').length;
+                      const approvedCount = groups.filter(g => g.status === 'approved').length;
+
+                      return (
+                        <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                            <h3 style={{ margin: 0, fontSize: '18px' }}>🏖️ Leave Requests</h3>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <select value={leaveAgentFilter} onChange={e => setLeaveAgentFilter(e.target.value)}
+                                style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
+                                <option value="all">All Agents</option>
+                                {agentNames.map(n => <option key={n} value={n}>{n}</option>)}
+                              </select>
+                              <select value={leaveStatusFilter} onChange={e => setLeaveStatusFilter(e.target.value)}
+                                style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
+                                <option value="all">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                              </select>
+                            </div>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#333' }}>Bill To: [Shop Name] | Agent: [Agent Name]</div>
-                          <div style={{ marginTop: '10px', fontSize: '10px', color: '#555' }}>Products and amounts will appear here...</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: '12px', marginBottom: '16px' }}>
-                          <div>
-                            {invoiceSettings.logo_url && <img src={invoiceSettings.logo_url} alt="Logo" style={{ height: '36px', objectFit: 'contain', marginBottom: '6px', display: 'block' }} />}
-                            <strong style={{ fontSize: '14px' }}>{invoiceSettings.company_name || 'Your Company Name'}</strong>
-                            <div style={{ color: '#555', fontSize: '11px', marginTop: '2px' }}>{invoiceSettings.address || 'Your Address'}</div>
-                            {invoiceSettings.phone && <div style={{ color: '#555', fontSize: '11px' }}>📞 {invoiceSettings.phone}</div>}
-                            {invoiceSettings.gst_number && <div style={{ color: '#555', fontSize: '11px' }}>GST: {invoiceSettings.gst_number}</div>}
+                          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                            {[
+                              { label: '⏳ Pending', value: pendingCount, color: '#ca8a04', bg: '#fef9c3' },
+                              { label: '✓ Approved', value: approvedCount, color: '#16a34a', bg: '#dcfce7' },
+                              { label: '📦 Total Requests', value: groups.length, color: '#64748b', bg: '#f1f5f9' },
+                            ].map(item => (
+                              <div key={item.label} style={{ flex: 1, minWidth: '120px', padding: '14px', backgroundColor: item.bg, borderRadius: '8px' }}>
+                                <span style={{ fontSize: '12px', color: '#64748b' }}>{item.label}</span>
+                                <strong style={{ display: 'block', fontSize: '18px', color: item.color, marginTop: '4px' }}>{item.value}</strong>
+                              </div>
+                            ))}
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ backgroundColor: '#0f172a', color: '#fff', padding: '4px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', marginBottom: '6px', display: 'inline-block' }}>DELIVERY INVOICE</div>
-                            <div style={{ fontSize: '11px' }}>Bill No: ET-2026-482931-847</div>
-                            <div style={{ fontSize: '11px', color: '#555' }}>Date: {new Date().toLocaleDateString('en-IN')}</div>
+                          {filteredGroups.length === 0 ? (
+                            <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No leave requests found.</p>
+                          ) : (
+                            <div style={{ overflowX: 'auto' }}>
+                              <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                  <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Dates</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Reason</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Status</th>
+                                  <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Action</th>
+                                </tr></thead>
+                                <tbody>{filteredGroups.map(group => {
+                                  const isPending = group.status === 'pending';
+                                  const isApproved = group.status === 'approved';
+                                  const isSingle = group.startDate === group.endDate;
+                                  const dateLabel = isSingle
+                                    ? new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                    : `${new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(group.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                                  return (
+                                    <tr key={group.ids[0]} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                      <td style={{ padding: '10px 12px', color: '#0f172a' }}>
+                                        {dateLabel}{!isSingle && <span style={{ marginLeft: '8px', fontSize: '12px', color: '#7c3aed', fontWeight: '600' }}>{group.days} days</span>}
+                                      </td>
+                                      <td style={{ padding: '10px 12px', fontWeight: '500' }}>{group.agent_name}</td>
+                                      <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.reason || '—'}</td>
+                                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                        <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
+                                          {isApproved ? '✓ Approved' : isPending ? '⏳ Pending' : '✕ Rejected'}
+                                        </span>
+                                      </td>
+                                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                        {isPending && (
+                                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                            <button onClick={() => handleLeaveAction(group, 'approved')}
+                                              style={{ padding: '5px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✓ Approve</button>
+                                            <button onClick={() => handleLeaveAction(group, 'rejected')}
+                                              style={{ padding: '5px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✕ Reject</button>
+                                          </div>
+                                        )}
+                                        {!isPending && (
+                                          <button onClick={() => handleLeaveAction(group, 'pending')}
+                                            style={{ padding: '5px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>Undo</button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}</tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ── ATTENDANCE ── */}
+                    {(() => {
+                      const presentSet = new Set(attendance.map(a => a.agent_name));
+                      const leaveSet = new Set(attendanceLeaves.map(l => l.agent_name));
+                      const presentCount = agentsList.filter(a => presentSet.has(a.full_name)).length;
+                      const leaveCount = agentsList.filter(a => leaveSet.has(a.full_name)).length;
+                      const absentCount = agentsList.length - presentCount - leaveCount;
+                      const isToday = attendanceDate === new Date().toISOString().slice(0, 10);
+                      return (
+                        <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                            <div>
+                              <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📋 Attendance</h3>
+                              <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{presentCount} of {agentsList.length} present{leaveCount > 0 ? ` · ${leaveCount} on leave` : ''}</p>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <input type="date" value={attendanceDate} max={new Date().toISOString().slice(0,10)}
+                                onChange={e => { setAttendanceDate(e.target.value); loadAttendance(e.target.value); }}
+                                style={{ padding: '7px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }} />
+                              {isToday && <span style={{ fontSize: '11px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold' }}>Today</span>}
+                            </div>
                           </div>
+                          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                            {[
+                              { label: '✅ Present', value: presentCount, color: '#16a34a', bg: '#dcfce7' },
+                              { label: '🏖️ On Leave', value: leaveCount, color: '#d97706', bg: '#fef9c3' },
+                              { label: '✗ Absent', value: absentCount, color: '#dc2626', bg: '#fee2e2' },
+                            ].map(s => (
+                              <div key={s.label} style={{ flex: 1, minWidth: '90px', padding: '12px', backgroundColor: s.bg, borderRadius: '8px', textAlign: 'center' }}>
+                                <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#64748b' }}>{s.label}</p>
+                                <strong style={{ fontSize: '22px', color: s.color }}>{s.value}</strong>
+                              </div>
+                            ))}
+                          </div>
+                          {agentsList.length === 0 ? (
+                            <p style={{ color: '#64748b', fontSize: '13px' }}>No agents found.</p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {agentsList.map(agent => {
+                                const rec = attendance.find(a => a.agent_name === agent.full_name);
+                                const onLeave = leaveSet.has(agent.full_name);
+                                const isPresent = !!rec;
+                                return (
+                                  <div key={agent.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', backgroundColor: isPresent ? '#f0fdf4' : onLeave ? '#fefce8' : '#fef2f2', border: `1px solid ${isPresent ? '#bbf7d0' : onLeave ? '#fde68a' : '#fecaca'}` }}>
+                                    <span style={{ fontWeight: '600', fontSize: '14px' }}>{agent.full_name}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      {rec && <span style={{ fontSize: '12px', color: '#64748b' }}>{new Date(rec.marked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+                                      <span style={{ padding: '3px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: isPresent ? '#dcfce7' : onLeave ? '#fef9c3' : '#fee2e2', color: isPresent ? '#15803d' : onLeave ? '#92400e' : '#dc2626' }}>
+                                        {isPresent ? '✅ Present' : onLeave ? '🏖️ On Leave' : '✗ Absent'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                          <thead><tr style={{ backgroundColor: '#0f172a', color: '#fff' }}>
-                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Product</th>
-                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Rate</th>
-                            <th style={{ padding: '6px 8px', textAlign: 'center' }}>Qty</th>
-                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
-                          </tr></thead>
-                          <tbody>
-                            <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                              <td style={{ padding: '6px 8px' }}>Sample Product A</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>₹100.00</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>10 boxes</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>₹1,000.00</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                          <div style={{ backgroundColor: '#0f172a', color: '#fff', padding: '8px 16px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Grand Total: ₹1,000.00</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                      );
+                    })()}
 
-            ) : (
-              /* Management Panel */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
-
-                {/* 1. Invite New Agent */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Invite New Agent</h3>
-                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Agent receives email invitation to set password and log in.</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '500px' }}>
-                    <input type="text" placeholder="Agent Full Name" value={newAgentName} onChange={(e) => setNewAgentName(e.target.value)}
-                      style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
-                    <input type="email" placeholder="Agent Email" value={newAgentEmail} onChange={(e) => setNewAgentEmail(e.target.value)}
-                      style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
-                    <button onClick={handleInviteAgent} disabled={isAddingAgent}
-                      style={{ padding: '12px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: isAddingAgent ? 0.7 : 1 }}>
-                      {isAddingAgent ? 'Sending...' : '✉️ Send Invitation'}
-                    </button>
-                    {inviteMessage && <p style={{ margin: '0', fontSize: '13px', color: inviteMessage.includes('✅') ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{inviteMessage}</p>}
-                  </div>
-                </div>
-
-                {/* 2. Leave Requests */}
-                {(() => {
-                  // Group consecutive dates with same agent+reason+status into ranges (mirrors agent-side Leave History grouping)
-                  const sorted = [...allLeaveRequests].sort((a, b) => a.agent_id === b.agent_id ? a.leave_date.localeCompare(b.leave_date) : (a.agent_name || '').localeCompare(b.agent_name || ''));
-                  const groups = [];
-                  for (const leave of sorted) {
-                    const prev = groups[groups.length - 1];
-                    const prevDate = prev ? new Date(prev.endDate) : null;
-                    const curDate = new Date(leave.leave_date);
-                    const isConsecutive = prevDate && (curDate - prevDate) === 86400000;
-                    if (prev && isConsecutive && prev.agent_id === leave.agent_id && prev.reason === leave.reason && prev.status === leave.status) {
-                      prev.endDate = leave.leave_date;
-                      prev.days++;
-                      prev.ids.push(leave.id);
-                    } else {
-                      groups.push({ agent_id: leave.agent_id, agent_name: leave.agent_name, reason: leave.reason, status: leave.status, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id] });
-                    }
-                  }
-                  groups.reverse();
-
-                  const agentNames = [...new Set(allLeaveRequests.map(l => l.agent_name))].sort();
-                  const filteredGroups = groups.filter(g =>
-                    (leaveAgentFilter === 'all' || g.agent_name === leaveAgentFilter) &&
-                    (leaveStatusFilter === 'all' || g.status === leaveStatusFilter)
-                  );
-                  const pendingCount = groups.filter(g => g.status === 'pending').length;
-                  const approvedCount = groups.filter(g => g.status === 'approved').length;
-
-                  return (
+                    {/* Agent Performance Summary */}
                     <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                        <h3 style={{ margin: 0, fontSize: '18px' }}>🏖️ Leave Requests</h3>
-                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                          <select value={leaveAgentFilter} onChange={e => setLeaveAgentFilter(e.target.value)}
-                            style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
-                            <option value="all">All Agents</option>
-                            {agentNames.map(n => <option key={n} value={n}>{n}</option>)}
-                          </select>
-                          <select value={leaveStatusFilter} onChange={e => setLeaveStatusFilter(e.target.value)}
-                            style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}>
-                            <option value="all">All Status</option>
-                            <option value="pending">Pending</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
-                          </select>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📊 Agent Performance</h3>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>Deliveries and collections by agent.</p>
+                        </div>
+                        <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                          <button onClick={() => setAgentPerfView('today')} style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: agentPerfView === 'today' ? '#0f172a' : '#f8fafc', color: agentPerfView === 'today' ? '#ffffff' : '#475569' }}>Today</button>
+                          <button onClick={() => setAgentPerfView('week')} style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: agentPerfView === 'week' ? '#0f172a' : '#f8fafc', color: agentPerfView === 'week' ? '#ffffff' : '#475569', borderLeft: '1px solid #e2e8f0' }}>This Week</button>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                        {[
-                          { label: '⏳ Pending', value: pendingCount, color: '#ca8a04', bg: '#fef9c3' },
-                          { label: '✓ Approved', value: approvedCount, color: '#16a34a', bg: '#dcfce7' },
-                          { label: '📦 Total Requests', value: groups.length, color: '#64748b', bg: '#f1f5f9' },
-                        ].map(item => (
-                          <div key={item.label} style={{ flex: 1, minWidth: '120px', padding: '14px', backgroundColor: item.bg, borderRadius: '8px' }}>
-                            <span style={{ fontSize: '12px', color: '#64748b' }}>{item.label}</span>
-                            <strong style={{ display: 'block', fontSize: '18px', color: item.color, marginTop: '4px' }}>{item.value}</strong>
-                          </div>
-                        ))}
-                      </div>
-                      {filteredGroups.length === 0 ? (
-                        <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No leave requests found.</p>
+                      {agentsList.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '13px' }}>No agents found.</p>
                       ) : (
                         <div style={{ overflowX: 'auto' }}>
-                          <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', fontSize: '13px' }}>
-                            <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Dates</th>
-                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
-                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Reason</th>
-                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Status</th>
-                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Action</th>
-                            </tr></thead>
-                            <tbody>{filteredGroups.map(group => {
-                              const isPending = group.status === 'pending';
-                              const isApproved = group.status === 'approved';
-                              const isSingle = group.startDate === group.endDate;
-                              const dateLabel = isSingle
-                                ? new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                                : `${new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(group.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                          <table style={{ width: '100%', minWidth: '500px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                                <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Bills Delivered</th>
+                                <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Sales</th>
+                                <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Collected</th>
+                                <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Efficiency</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {agentsList
+                                .map(agent => {
+                                  const d = (agentPerfView === 'today' ? agentPerf.today : agentPerf.week)[agent.full_name] || { bills: 0, sales: 0, collected: 0 };
+                                  return { agent, d, eff: d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0 };
+                                })
+                                .sort((a, b) => b.d.sales - a.d.sales)
+                                .map(({ agent, d, eff }, i) => (
+                                  <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', opacity: d.bills === 0 ? 0.45 : 1 }}>
+                                    <td style={{ padding: '11px 14px', fontWeight: 'bold' }}>{agent.full_name}</td>
+                                    <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                                      {d.bills > 0
+                                        ? <span style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 10px', borderRadius: '12px', fontWeight: 'bold' }}>{d.bills}</span>
+                                        : <span style={{ color: '#cbd5e1' }}>0</span>}
+                                    </td>
+                                    <td style={{ padding: '11px 14px', textAlign: 'right', color: d.sales > 0 ? '#2563eb' : '#cbd5e1', fontWeight: d.sales > 0 ? 'bold' : 'normal' }}>₹{d.sales.toLocaleString('en-IN')}</td>
+                                    <td style={{ padding: '11px 14px', textAlign: 'right', color: d.collected > 0 ? '#16a34a' : '#cbd5e1', fontWeight: d.collected > 0 ? 'bold' : 'normal' }}>₹{d.collected.toLocaleString('en-IN')}</td>
+                                    <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                                      {d.bills > 0
+                                        ? <span style={{ backgroundColor: eff >= 80 ? '#dcfce7' : '#fef9c3', color: eff >= 80 ? '#15803d' : '#854d0e', padding: '3px 10px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px' }}>{eff}%</span>
+                                        : <span style={{ color: '#cbd5e1' }}>—</span>}
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── TARGET VS ACHIEVEMENT ── */}
+                    {agentTargets.length > 0 && (() => {
+                      const month = new Date().toISOString().slice(0, 7);
+                      const monthLabel = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                      const rows = agentsList.map(agent => {
+                        const tgt = agentTargets.find(t => t.agent_name === agent.full_name);
+                        const actual = agentPerfMonth[agent.full_name] || { sales: 0, collected: 0, bills: 0 };
+                        return { name: agent.full_name, tgt, actual };
+                      }).filter(r => r.tgt);
+                      if (rows.length === 0) return null;
+                      return (
+                        <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div>
+                              <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>🎯 Target vs Achievement</h3>
+                              <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{monthLabel} · month-to-date</p>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {rows.sort((a, b) => {
+                              const aPct = a.tgt?.sales_target > 0 ? a.actual.sales / a.tgt.sales_target : 0;
+                              const bPct = b.tgt?.sales_target > 0 ? b.actual.sales / b.tgt.sales_target : 0;
+                              return bPct - aPct;
+                            }).map(({ name, tgt, actual }, i) => {
+                              const salesPct = tgt.sales_target > 0 ? Math.min(100, Math.round(actual.sales / tgt.sales_target * 100)) : null;
+                              const collPct = tgt.collection_target > 0 ? Math.min(100, Math.round(actual.collected / tgt.collection_target * 100)) : null;
+                              const statusColor = salesPct === null ? '#94a3b8' : salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626';
+                              const statusLabel = salesPct === null ? '—' : salesPct >= 100 ? '✅ On Target' : salesPct >= 70 ? '⚡ On Track' : '⚠️ Behind';
                               return (
-                                <tr key={group.ids[0]} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                  <td style={{ padding: '10px 12px', color: '#0f172a' }}>
-                                    {dateLabel}{!isSingle && <span style={{ marginLeft: '8px', fontSize: '12px', color: '#7c3aed', fontWeight: '600' }}>{group.days} days</span>}
-                                  </td>
-                                  <td style={{ padding: '10px 12px', fontWeight: '500' }}>{group.agent_name}</td>
-                                  <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.reason || '—'}</td>
+                                <div key={name} style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#0f172a' }}>{name}</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: statusColor }}>{statusLabel}</span>
+                                  </div>
+                                  {salesPct !== null && (
+                                    <div style={{ marginBottom: '10px' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                                        <span style={{ color: '#475569' }}>Sales · ₹{actual.sales.toLocaleString('en-IN')} / ₹{Number(tgt.sales_target).toLocaleString('en-IN')}</span>
+                                        <span style={{ fontWeight: 'bold', color: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626' }}>{salesPct}%</span>
+                                      </div>
+                                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
+                                        <div style={{ height: '100%', width: `${salesPct}%`, backgroundColor: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626', borderRadius: '4px', transition: 'width 0.4s' }} />
+                                      </div>
+                                    </div>
+                                  )}
+                                  {collPct !== null && (
+                                    <div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                                        <span style={{ color: '#475569' }}>Collection · ₹{actual.collected.toLocaleString('en-IN')} / ₹{Number(tgt.collection_target).toLocaleString('en-IN')}</span>
+                                        <span style={{ fontWeight: 'bold', color: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#dc2626' }}>{collPct}%</span>
+                                      </div>
+                                      <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
+                                        <div style={{ height: '100%', width: `${collPct}%`, backgroundColor: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#dc2626', borderRadius: '4px', transition: 'width 0.4s' }} />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* ── TODAY'S SHOP VISITS ── */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📍 Today's Shop Visits</h3>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{shopVisits.length} check-in{shopVisits.length !== 1 ? 's' : ''} recorded today</p>
+                        </div>
+                        <button onClick={loadShopVisits} style={{ padding: '6px 14px', border: '1.5px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', backgroundColor: '#f8fafc', color: '#475569' }}>↺ Refresh</button>
+                      </div>
+                      {shopVisits.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No check-ins today yet.</p>
+                      ) : (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Time</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Shop</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Outcome</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>GPS Distance</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Note</th>
+                            </tr></thead>
+                            <tbody>{shopVisits.map(v => {
+                              const shopLat = v.shops?.latitude; const shopLng = v.shops?.longitude;
+                              const distM = (v.latitude && shopLat)
+                                ? Math.round(calcDistance(parseFloat(v.latitude), parseFloat(v.longitude), parseFloat(shopLat), parseFloat(shopLng)) * 1000)
+                                : null;
+                              const isVisited = v.outcome === 'visited'; const isClosed = v.outcome === 'closed';
+                              return (
+                                <tr key={v.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                  <td style={{ padding: '10px 12px', color: '#64748b' }}>{new Date(v.visited_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+                                  <td style={{ padding: '10px 12px', fontWeight: '500' }}>{v.agent_name}</td>
+                                  <td style={{ padding: '10px 12px' }}>{v.shop_name}</td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
-                                      {isApproved ? '✓ Approved' : isPending ? '⏳ Pending' : '✕ Rejected'}
+                                    <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isVisited ? '#dcfce7' : isClosed ? '#fee2e2' : '#fef9c3', color: isVisited ? '#15803d' : isClosed ? '#dc2626' : '#854d0e' }}>
+                                      {isVisited ? '✅ Visited' : isClosed ? '🔒 Closed' : '🚫 No Answer'}
                                     </span>
                                   </td>
-                                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                                    {isPending && (
-                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                                        <button onClick={() => handleLeaveAction(group, 'approved')}
-                                          style={{ padding: '5px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✓ Approve</button>
-                                        <button onClick={() => handleLeaveAction(group, 'rejected')}
-                                          style={{ padding: '5px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✕ Reject</button>
-                                      </div>
-                                    )}
-                                    {!isPending && (
-                                      <button onClick={() => handleLeaveAction(group, 'pending')}
-                                        style={{ padding: '5px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}>Undo</button>
-                                    )}
+                                  <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', color: distM === null ? '#94a3b8' : distM <= 200 ? '#16a34a' : distM <= 500 ? '#d97706' : '#dc2626', fontWeight: distM !== null ? 'bold' : 'normal' }}>
+                                    {distM === null ? '—' : distM < 1000 ? `${distM}m` : `${(distM/1000).toFixed(1)}km`}
                                   </td>
+                                  <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.note || '—'}</td>
                                 </tr>
                               );
                             })}</tbody>
@@ -3104,377 +3113,397 @@ function OwnerDashboard() {
                         </div>
                       )}
                     </div>
-                  );
-                })()}
 
-                {/* ── ATTENDANCE ── */}
-                {(() => {
-                  const presentSet = new Set(attendance.map(a => a.agent_name));
-                  const leaveSet = new Set(attendanceLeaves.map(l => l.agent_name));
-                  const presentCount = agentsList.filter(a => presentSet.has(a.full_name)).length;
-                  const leaveCount = agentsList.filter(a => leaveSet.has(a.full_name)).length;
-                  const absentCount = agentsList.length - presentCount - leaveCount;
-                  const isToday = attendanceDate === new Date().toISOString().slice(0, 10);
-                  return (
-                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
-                        <div>
-                          <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📋 Attendance</h3>
-                          <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{presentCount} of {agentsList.length} present{leaveCount > 0 ? ` · ${leaveCount} on leave` : ''}</p>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <input type="date" value={attendanceDate} max={new Date().toISOString().slice(0,10)}
-                            onChange={e => { setAttendanceDate(e.target.value); loadAttendance(e.target.value); }}
-                            style={{ padding: '7px 10px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }} />
-                          {isToday && <span style={{ fontSize: '11px', backgroundColor: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold' }}>Today</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                        {[
-                          { label: '✅ Present', value: presentCount, color: '#16a34a', bg: '#dcfce7' },
-                          { label: '🏖️ On Leave', value: leaveCount, color: '#d97706', bg: '#fef9c3' },
-                          { label: '✗ Absent', value: absentCount, color: '#dc2626', bg: '#fee2e2' },
-                        ].map(s => (
-                          <div key={s.label} style={{ flex: 1, minWidth: '90px', padding: '12px', backgroundColor: s.bg, borderRadius: '8px', textAlign: 'center' }}>
-                            <p style={{ margin: '0 0 2px', fontSize: '11px', color: '#64748b' }}>{s.label}</p>
-                            <strong style={{ fontSize: '22px', color: s.color }}>{s.value}</strong>
-                          </div>
-                        ))}
-                      </div>
+                    {/* 2. Field Agents List */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Field Agents</h3>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Manage active field agents. Removing an agent revokes login access but preserves all their past bills.</p>
                       {agentsList.length === 0 ? (
-                        <p style={{ color: '#64748b', fontSize: '13px' }}>No agents found.</p>
+                        <p style={{ color: '#64748b', fontSize: '14px' }}>No agents found.</p>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {agentsList.map(agent => {
-                            const rec = attendance.find(a => a.agent_name === agent.full_name);
-                            const onLeave = leaveSet.has(agent.full_name);
-                            const isPresent = !!rec;
-                            return (
-                              <div key={agent.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '8px', backgroundColor: isPresent ? '#f0fdf4' : onLeave ? '#fefce8' : '#fef2f2', border: `1px solid ${isPresent ? '#bbf7d0' : onLeave ? '#fde68a' : '#fecaca'}` }}>
-                                <span style={{ fontWeight: '600', fontSize: '14px' }}>{agent.full_name}</span>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                  {rec && <span style={{ fontSize: '12px', color: '#64748b' }}>{new Date(rec.marked_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
-                                  <span style={{ padding: '3px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: isPresent ? '#dcfce7' : onLeave ? '#fef9c3' : '#fee2e2', color: isPresent ? '#15803d' : onLeave ? '#92400e' : '#dc2626' }}>
-                                    {isPresent ? '✅ Present' : onLeave ? '🏖️ On Leave' : '✗ Absent'}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
+                        <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                          <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Email</th>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Bills Handled</th>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Joined</th>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Action</th>
+                          </tr></thead>
+                          <tbody>{agentsList.map((agent) => (
+                            <tr key={agent.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '14px 16px' }}>
+                                <button onClick={() => loadAgentProfile(agent)}
+                                  style={{ background: 'none', border: 'none', fontWeight: 'bold', fontSize: '14px', color: '#2563eb', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                                  {agent.full_name}
+                                </button>
+                              </td>
+                              <td style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{agent.email}</td>
+                              <td style={{ padding: '14px 16px' }}>
+                                <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>{agent.billCount} bills</span>
+                              </td>
+                              <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(agent.created_at).toLocaleDateString('en-IN')}</td>
+                              <td style={{ padding: '14px 16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <button
+                                  onClick={() => { const currentMonth = new Date().toISOString().slice(0, 7); const tgt = agentTargets.find(t => t.agent_name === agent.full_name); setTargetModal({ agentName: agent.full_name, month: currentMonth, salesTarget: tgt?.sales_target ?? '', collectionTarget: tgt?.collection_target ?? '' }); }}
+                                  style={{ padding: '8px 14px', backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                                >🎯 Target</button>
+                                <button
+                                  onClick={() => handleDeleteAgent(agent)}
+                                  disabled={isDeletingAgent === agent.id}
+                                  style={{ padding: '8px 14px', backgroundColor: isDeletingAgent === agent.id ? '#e2e8f0' : '#fee2e2', color: isDeletingAgent === agent.id ? '#94a3b8' : '#dc2626', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                                >{isDeletingAgent === agent.id ? 'Removing...' : '🗑 Remove Agent'}</button>
+                              </td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
                         </div>
                       )}
                     </div>
-                  );
-                })()}
-
-                {/* Agent Performance Summary */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📊 Agent Performance</h3>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>Deliveries and collections by agent.</p>
-                    </div>
-                    <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
-                      <button onClick={() => setAgentPerfView('today')} style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: agentPerfView === 'today' ? '#0f172a' : '#f8fafc', color: agentPerfView === 'today' ? '#ffffff' : '#475569' }}>Today</button>
-                      <button onClick={() => setAgentPerfView('week')} style={{ padding: '7px 16px', fontSize: '13px', fontWeight: 'bold', border: 'none', cursor: 'pointer', backgroundColor: agentPerfView === 'week' ? '#0f172a' : '#f8fafc', color: agentPerfView === 'week' ? '#ffffff' : '#475569', borderLeft: '1px solid #e2e8f0' }}>This Week</button>
-                    </div>
                   </div>
-                  {agentsList.length === 0 ? (
-                    <p style={{ color: '#64748b', fontSize: '13px' }}>No agents found.</p>
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: '500px', borderCollapse: 'collapse', fontSize: '13px' }}>
-                        <thead>
-                          <tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                            <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Agent</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Bills Delivered</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Sales</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Collected</th>
-                            <th style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>Efficiency</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {agentsList
-                            .map(agent => {
-                              const d = (agentPerfView === 'today' ? agentPerf.today : agentPerf.week)[agent.full_name] || { bills: 0, sales: 0, collected: 0 };
-                              return { agent, d, eff: d.sales > 0 ? Math.round((d.collected / d.sales) * 100) : 0 };
-                            })
-                            .sort((a, b) => b.d.sales - a.d.sales)
-                            .map(({ agent, d, eff }, i) => (
-                              <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', opacity: d.bills === 0 ? 0.45 : 1 }}>
-                                <td style={{ padding: '11px 14px', fontWeight: 'bold' }}>{agent.full_name}</td>
-                                <td style={{ padding: '11px 14px', textAlign: 'right' }}>
-                                  {d.bills > 0
-                                    ? <span style={{ backgroundColor: '#eff6ff', color: '#2563eb', padding: '2px 10px', borderRadius: '12px', fontWeight: 'bold' }}>{d.bills}</span>
-                                    : <span style={{ color: '#cbd5e1' }}>0</span>}
-                                </td>
-                                <td style={{ padding: '11px 14px', textAlign: 'right', color: d.sales > 0 ? '#2563eb' : '#cbd5e1', fontWeight: d.sales > 0 ? 'bold' : 'normal' }}>₹{d.sales.toLocaleString('en-IN')}</td>
-                                <td style={{ padding: '11px 14px', textAlign: 'right', color: d.collected > 0 ? '#16a34a' : '#cbd5e1', fontWeight: d.collected > 0 ? 'bold' : 'normal' }}>₹{d.collected.toLocaleString('en-IN')}</td>
-                                <td style={{ padding: '11px 14px', textAlign: 'right' }}>
-                                  {d.bills > 0
-                                    ? <span style={{ backgroundColor: eff >= 80 ? '#dcfce7' : '#fef9c3', color: eff >= 80 ? '#15803d' : '#854d0e', padding: '3px 10px', borderRadius: '20px', fontWeight: 'bold', fontSize: '12px' }}>{eff}%</span>
-                                    : <span style={{ color: '#cbd5e1' }}>—</span>}
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
+                )}
 
-                {/* ── TARGET VS ACHIEVEMENT ── */}
-                {agentTargets.length > 0 && (() => {
-                  const month = new Date().toISOString().slice(0, 7);
-                  const monthLabel = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-                  const rows = agentsList.map(agent => {
-                    const tgt = agentTargets.find(t => t.agent_name === agent.full_name);
-                    const actual = agentPerfMonth[agent.full_name] || { sales: 0, collected: 0, bills: 0 };
-                    return { name: agent.full_name, tgt, actual };
-                  }).filter(r => r.tgt);
-                  if (rows.length === 0) return null;
-                  return (
-                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
-                        <div>
-                          <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>🎯 Target vs Achievement</h3>
-                          <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{monthLabel} · month-to-date</p>
+                {settingsSubTab === 'products' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+
+                    {/* 3. Add New Product */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Add New Product</h3>
+                      <form onSubmit={async (e) => {
+                        e.preventDefault();
+                        const form = e.target;
+                        const name = form.prodName.value.trim();
+                        const price = parseFloat(form.prodPrice.value) || 0;
+                        const stock = parseInt(form.prodStock.value) || 0;
+                        const threshold = parseInt(form.prodThreshold.value) || 10;
+                        if (!name) return alert('Enter product name.');
+                        const { error } = await supabase.from('products').insert([{ id: crypto.randomUUID(), name, unit_price: price, inventory_stock: stock, low_stock_threshold: threshold, is_active: true }]);
+                        if (error) alert(`Error: ${error.message}`);
+                        else { addToast(`✅ "${name}" added!`); form.reset(); loadMasterProducts(); }
+                      }} style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'flex-end', marginTop: '20px' }}>
+                        <div style={{ flex: '1', minWidth: '200px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Product Name</label>
+                          <input type="text" name="prodName" placeholder="e.g. Premium Box" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {rows.sort((a, b) => {
-                          const aPct = a.tgt?.sales_target > 0 ? a.actual.sales / a.tgt.sales_target : 0;
-                          const bPct = b.tgt?.sales_target > 0 ? b.actual.sales / b.tgt.sales_target : 0;
-                          return bPct - aPct;
-                        }).map(({ name, tgt, actual }, i) => {
-                          const salesPct = tgt.sales_target > 0 ? Math.min(100, Math.round(actual.sales / tgt.sales_target * 100)) : null;
-                          const collPct = tgt.collection_target > 0 ? Math.min(100, Math.round(actual.collected / tgt.collection_target * 100)) : null;
-                          const statusColor = salesPct === null ? '#94a3b8' : salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626';
-                          const statusLabel = salesPct === null ? '—' : salesPct >= 100 ? '✅ On Target' : salesPct >= 70 ? '⚡ On Track' : '⚠️ Behind';
-                          return (
-                            <div key={name} style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#0f172a' }}>{name}</span>
-                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: statusColor }}>{statusLabel}</span>
-                              </div>
-                              {salesPct !== null && (
-                                <div style={{ marginBottom: '10px' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-                                    <span style={{ color: '#475569' }}>Sales · ₹{actual.sales.toLocaleString('en-IN')} / ₹{Number(tgt.sales_target).toLocaleString('en-IN')}</span>
-                                    <span style={{ fontWeight: 'bold', color: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626' }}>{salesPct}%</span>
-                                  </div>
-                                  <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
-                                    <div style={{ height: '100%', width: `${salesPct}%`, backgroundColor: salesPct >= 100 ? '#16a34a' : salesPct >= 70 ? '#d97706' : '#dc2626', borderRadius: '4px', transition: 'width 0.4s' }} />
-                                  </div>
-                                </div>
-                              )}
-                              {collPct !== null && (
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-                                    <span style={{ color: '#475569' }}>Collection · ₹{actual.collected.toLocaleString('en-IN')} / ₹{Number(tgt.collection_target).toLocaleString('en-IN')}</span>
-                                    <span style={{ fontWeight: 'bold', color: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#dc2626' }}>{collPct}%</span>
-                                  </div>
-                                  <div style={{ height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px' }}>
-                                    <div style={{ height: '100%', width: `${collPct}%`, backgroundColor: collPct >= 100 ? '#16a34a' : collPct >= 70 ? '#d97706' : '#dc2626', borderRadius: '4px', transition: 'width 0.4s' }} />
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                        <div style={{ width: '130px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Price (₹)</label>
+                          <input type="number" name="prodPrice" placeholder="450" min="0" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                        </div>
+                        <div style={{ width: '130px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Stock</label>
+                          <input type="number" name="prodStock" placeholder="100" min="0" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                        </div>
+                        <div style={{ width: '130px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Alert below</label>
+                          <input type="number" name="prodThreshold" placeholder="10" min="0" defaultValue="10" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                        </div>
+                        <button type="submit" style={{ padding: '12px 24px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>📦 Add</button>
+                      </form>
                     </div>
-                  );
-                })()}
 
-                {/* ── TODAY'S SHOP VISITS ── */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                    <div>
-                      <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>📍 Today's Shop Visits</h3>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{shopVisits.length} check-in{shopVisits.length !== 1 ? 's' : ''} recorded today</p>
-                    </div>
-                    <button onClick={loadShopVisits} style={{ padding: '6px 14px', border: '1.5px solid #e2e8f0', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', backgroundColor: '#f8fafc', color: '#475569' }}>↺ Refresh</button>
-                  </div>
-                  {shopVisits.length === 0 ? (
-                    <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No check-ins today yet.</p>
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    {/* 5. Product Catalog */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>Product Catalog</h3>
+                      <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
                         <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Time</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Agent</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Shop</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Outcome</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>GPS Distance</th>
-                          <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Note</th>
+                          <th style={{ padding: '16px', color: '#475569' }}>Name</th>
+                          <th style={{ padding: '16px', color: '#475569', width: '160px' }}>Price (₹)</th>
+                          <th style={{ padding: '16px', color: '#475569', width: '160px' }}>Stock</th>
+                          <th style={{ padding: '16px', color: '#475569', width: '130px' }}>Min Stock</th>
+                          <th style={{ padding: '16px', color: '#475569', width: '200px' }}>Actions</th>
                         </tr></thead>
-                        <tbody>{shopVisits.map(v => {
-                          const shopLat = v.shops?.latitude; const shopLng = v.shops?.longitude;
-                          const distM = (v.latitude && shopLat)
-                            ? Math.round(calcDistance(parseFloat(v.latitude), parseFloat(v.longitude), parseFloat(shopLat), parseFloat(shopLng)) * 1000)
-                            : null;
-                          const isVisited = v.outcome === 'visited'; const isClosed = v.outcome === 'closed';
+                        <tbody>{productsCatalog.filter(p => p.is_active !== false).map((prod) => {
+                          const threshold = prod.low_stock_threshold || 10;
+                          const isLow = threshold > 0 && prod.inventory_stock <= threshold;
                           return (
-                            <tr key={v.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                              <td style={{ padding: '10px 12px', color: '#64748b' }}>{new Date(v.visited_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
-                              <td style={{ padding: '10px 12px', fontWeight: '500' }}>{v.agent_name}</td>
-                              <td style={{ padding: '10px 12px' }}>{v.shop_name}</td>
-                              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                                <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isVisited ? '#dcfce7' : isClosed ? '#fee2e2' : '#fef9c3', color: isVisited ? '#15803d' : isClosed ? '#dc2626' : '#854d0e' }}>
-                                  {isVisited ? '✅ Visited' : isClosed ? '🔒 Closed' : '🚫 No Answer'}
-                                </span>
-                              </td>
-                              <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', color: distM === null ? '#94a3b8' : distM <= 200 ? '#16a34a' : distM <= 500 ? '#d97706' : '#dc2626', fontWeight: distM !== null ? 'bold' : 'normal' }}>
-                                {distM === null ? '—' : distM < 1000 ? `${distM}m` : `${(distM/1000).toFixed(1)}km`}
-                              </td>
-                              <td style={{ padding: '10px 12px', color: '#64748b', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.note || '—'}</td>
-                            </tr>
-                          );
+                          <tr key={prod.id} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: isLow ? '#fffbeb' : 'transparent' }}>
+                            <td style={{ padding: '16px' }}>
+                              <input type="text" value={prod.name} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].name = e.target.value; setProductsCatalog(u); }}
+                                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                              <input type="number" value={prod.unit_price} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].unit_price = e.target.value; setProductsCatalog(u); }}
+                                style={{ width: '110px', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', color: '#16a34a', fontWeight: 'bold' }} />
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <input type="number" value={prod.inventory_stock} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].inventory_stock = e.target.value; setProductsCatalog(u); }}
+                                  style={{ width: '90px', padding: '8px', borderRadius: '4px', border: `1px solid ${isLow ? '#dc2626' : '#cbd5e1'}`, fontWeight: 'bold', color: isLow ? '#dc2626' : '#0f172a' }} />
+                                {isLow && <span style={{ fontSize: '14px' }}>⚠️</span>}
+                              </div>
+                            </td>
+                            <td style={{ padding: '16px' }}>
+                              <input type="number" min="0" value={threshold} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].low_stock_threshold = parseInt(e.target.value) || 0; setProductsCatalog(u); }}
+                                style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', color: '#64748b' }} />
+                            </td>
+                            <td style={{ padding: '16px', display: 'flex', gap: '8px' }}>
+                              <button onClick={async () => {
+                                const { error } = await supabase.from('products').update({ name: prod.name, unit_price: parseFloat(prod.unit_price) || 0, inventory_stock: parseInt(prod.inventory_stock) || 0, low_stock_threshold: parseInt(prod.low_stock_threshold) || 0 }).eq('id', prod.id);
+                                if (error) alert('Save failed: ' + error.message); else { addToast('✅ Product saved!'); loadMasterProducts(); }
+                              }} style={{ padding: '8px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
+                              <button onClick={async () => {
+                                if (window.confirm(`Remove "${prod.name}"?`)) {
+                                  const { error } = await supabase.from('products').update({ is_active: false }).eq('id', prod.id);
+                                  if (error) alert('Failed.'); else loadMasterProducts();
+                                }
+                              }} style={{ padding: '8px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
+                            </td>
+                          </tr>
+                        );
                         })}</tbody>
                       </table>
+                      </div>
                     </div>
-                  )}
-                </div>
-
-                {/* 2. Field Agents List */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Field Agents</h3>
-                  <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Manage active field agents. Removing an agent revokes login access but preserves all their past bills.</p>
-                  {agentsList.length === 0 ? (
-                    <p style={{ color: '#64748b', fontSize: '14px' }}>No agents found.</p>
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', minWidth: '560px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                      <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
-                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Email</th>
-                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Bills Handled</th>
-                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Joined</th>
-                        <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Action</th>
-                      </tr></thead>
-                      <tbody>{agentsList.map((agent) => (
-                        <tr key={agent.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '14px 16px' }}>
-                            <button onClick={() => loadAgentProfile(agent)}
-                              style={{ background: 'none', border: 'none', fontWeight: 'bold', fontSize: '14px', color: '#2563eb', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
-                              {agent.full_name}
-                            </button>
-                          </td>
-                          <td style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{agent.email}</td>
-                          <td style={{ padding: '14px 16px' }}>
-                            <span style={{ backgroundColor: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold' }}>{agent.billCount} bills</span>
-                          </td>
-                          <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(agent.created_at).toLocaleDateString('en-IN')}</td>
-                          <td style={{ padding: '14px 16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <button
-                              onClick={() => { const currentMonth = new Date().toISOString().slice(0, 7); const tgt = agentTargets.find(t => t.agent_name === agent.full_name); setTargetModal({ agentName: agent.full_name, month: currentMonth, salesTarget: tgt?.sales_target ?? '', collectionTarget: tgt?.collection_target ?? '' }); }}
-                              style={{ padding: '8px 14px', backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
-                            >🎯 Target</button>
-                            <button
-                              onClick={() => handleDeleteAgent(agent)}
-                              disabled={isDeletingAgent === agent.id}
-                              style={{ padding: '8px 14px', backgroundColor: isDeletingAgent === agent.id ? '#e2e8f0' : '#fee2e2', color: isDeletingAgent === agent.id ? '#94a3b8' : '#dc2626', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
-                            >{isDeletingAgent === agent.id ? 'Removing...' : '🗑 Remove Agent'}</button>
-                          </td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Add New Product */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Add New Product</h3>
-                  <form onSubmit={async (e) => {
-                    e.preventDefault();
-                    const form = e.target;
-                    const name = form.prodName.value.trim();
-                    const price = parseFloat(form.prodPrice.value) || 0;
-                    const stock = parseInt(form.prodStock.value) || 0;
-                    const threshold = parseInt(form.prodThreshold.value) || 10;
-                    if (!name) return alert('Enter product name.');
-                    const { error } = await supabase.from('products').insert([{ id: crypto.randomUUID(), name, unit_price: price, inventory_stock: stock, low_stock_threshold: threshold, is_active: true }]);
-                    if (error) alert(`Error: ${error.message}`);
-                    else { addToast(`✅ "${name}" added!`); form.reset(); loadMasterProducts(); }
-                  }} style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'flex-end', marginTop: '20px' }}>
-                    <div style={{ flex: '1', minWidth: '200px' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Product Name</label>
-                      <input type="text" name="prodName" placeholder="e.g. Premium Box" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ width: '130px' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Price (₹)</label>
-                      <input type="number" name="prodPrice" placeholder="450" min="0" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ width: '130px' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Stock</label>
-                      <input type="number" name="prodStock" placeholder="100" min="0" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ width: '130px' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Alert below</label>
-                      <input type="number" name="prodThreshold" placeholder="10" min="0" defaultValue="10" style={{ width: '100%', padding: '10px', border: '1px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
-                    </div>
-                    <button type="submit" style={{ padding: '12px 24px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>📦 Add</button>
-                  </form>
-                </div>
-
-                {/* 5. Product Catalog */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 20px 0', fontSize: '18px' }}>Product Catalog</h3>
-                  <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ padding: '16px', color: '#475569' }}>Name</th>
-                      <th style={{ padding: '16px', color: '#475569', width: '160px' }}>Price (₹)</th>
-                      <th style={{ padding: '16px', color: '#475569', width: '160px' }}>Stock</th>
-                      <th style={{ padding: '16px', color: '#475569', width: '130px' }}>Min Stock</th>
-                      <th style={{ padding: '16px', color: '#475569', width: '200px' }}>Actions</th>
-                    </tr></thead>
-                    <tbody>{productsCatalog.filter(p => p.is_active !== false).map((prod) => {
-                      const threshold = prod.low_stock_threshold || 10;
-                      const isLow = threshold > 0 && prod.inventory_stock <= threshold;
-                      return (
-                      <tr key={prod.id} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: isLow ? '#fffbeb' : 'transparent' }}>
-                        <td style={{ padding: '16px' }}>
-                          <input type="text" value={prod.name} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].name = e.target.value; setProductsCatalog(u); }}
-                            style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                        </td>
-                        <td style={{ padding: '16px' }}>
-                          <input type="number" value={prod.unit_price} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].unit_price = e.target.value; setProductsCatalog(u); }}
-                            style={{ width: '110px', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', color: '#16a34a', fontWeight: 'bold' }} />
-                        </td>
-                        <td style={{ padding: '16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <input type="number" value={prod.inventory_stock} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].inventory_stock = e.target.value; setProductsCatalog(u); }}
-                              style={{ width: '90px', padding: '8px', borderRadius: '4px', border: `1px solid ${isLow ? '#dc2626' : '#cbd5e1'}`, fontWeight: 'bold', color: isLow ? '#dc2626' : '#0f172a' }} />
-                            {isLow && <span style={{ fontSize: '14px' }}>⚠️</span>}
-                          </div>
-                        </td>
-                        <td style={{ padding: '16px' }}>
-                          <input type="number" min="0" value={threshold} onChange={(e) => { const u = [...productsCatalog]; u[u.findIndex(i => i.id === prod.id)].low_stock_threshold = parseInt(e.target.value) || 0; setProductsCatalog(u); }}
-                            style={{ width: '80px', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', color: '#64748b' }} />
-                        </td>
-                        <td style={{ padding: '16px', display: 'flex', gap: '8px' }}>
-                          <button onClick={async () => {
-                            const { error } = await supabase.from('products').update({ name: prod.name, unit_price: parseFloat(prod.unit_price) || 0, inventory_stock: parseInt(prod.inventory_stock) || 0, low_stock_threshold: parseInt(prod.low_stock_threshold) || 0 }).eq('id', prod.id);
-                            if (error) alert('Save failed: ' + error.message); else { addToast('✅ Product saved!'); loadMasterProducts(); }
-                          }} style={{ padding: '8px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
-                          <button onClick={async () => {
-                            if (window.confirm(`Remove "${prod.name}"?`)) {
-                              const { error } = await supabase.from('products').update({ is_active: false }).eq('id', prod.id);
-                              if (error) alert('Failed.'); else loadMasterProducts();
-                            }
-                          }} style={{ padding: '8px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
-                        </td>
-                      </tr>
-                    );
-                    })}</tbody>
-                  </table>
                   </div>
-                </div>
+                )}
+
+                {settingsSubTab === 'invoice' && (
+                  /* ── INVOICE SETTINGS ── */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '800px' }}>
+
+                    {/* Template Mode Selector */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 8px 0', fontSize: '18px' }}>Choose Invoice Style</h3>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Select how your invoice will look when printed.</p>
+                      <div style={{ display: 'flex', gap: '16px', flexDirection: isMobile ? 'column' : 'row' }}>
+                        <div
+                          onClick={() => setInvoiceSettings({ ...invoiceSettings, template_mode: 'custom' })}
+                          style={{ flex: 1, padding: '20px', borderRadius: '8px', border: `2px solid ${invoiceSettings.template_mode === 'custom' ? '#2563eb' : '#e2e8f0'}`, cursor: 'pointer', backgroundColor: invoiceSettings.template_mode === 'custom' ? '#eff6ff' : '#ffffff', transition: 'all 0.2s' }}
+                        >
+                          <div style={{ fontSize: '28px', marginBottom: '8px' }}>🎨</div>
+                          <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: invoiceSettings.template_mode === 'custom' ? '#1d4ed8' : '#0f172a' }}>Option B — Create My Own</h4>
+                          <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Fill in your company details. We generate a professional invoice automatically.</p>
+                        </div>
+                        <div
+                          onClick={() => setInvoiceSettings({ ...invoiceSettings, template_mode: 'upload' })}
+                          style={{ flex: 1, padding: '20px', borderRadius: '8px', border: `2px solid ${invoiceSettings.template_mode === 'upload' ? '#2563eb' : '#e2e8f0'}`, cursor: 'pointer', backgroundColor: invoiceSettings.template_mode === 'upload' ? '#eff6ff' : '#ffffff', transition: 'all 0.2s' }}
+                        >
+                          <div style={{ fontSize: '28px', marginBottom: '8px' }}>📄</div>
+                          <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: invoiceSettings.template_mode === 'upload' ? '#1d4ed8' : '#0f172a' }}>Option A — Upload Letterhead</h4>
+                          <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Upload your own company letterhead image. Invoice data prints on top of it.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Option B — Custom Details */}
+                    {invoiceSettings.template_mode === 'custom' && (
+                      <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                        <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Company Details</h3>
+                        <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: '#64748b' }}>These details will appear on every printed invoice.</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+                          {/* Logo Upload */}
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>Company Logo (optional)</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                              {invoiceSettings.logo_url && invoiceSettings.template_mode === 'custom' && (
+                                <img src={invoiceSettings.logo_url} alt="Logo" style={{ height: '50px', objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: '4px', padding: '4px' }} />
+                              )}
+                              <label style={{ padding: '10px 20px', backgroundColor: '#f1f5f9', border: '1.5px dashed #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500', color: '#475569' }}>
+                                {isUploadingLogo ? '⏳ Uploading...' : '📁 Upload Logo (PNG/JPG/SVG)'}
+                                <input type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" onChange={handleLogoUpload} style={{ display: 'none' }} />
+                              </label>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Company Name</label>
+                            <input type="text" value={invoiceSettings.company_name || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, company_name: e.target.value })}
+                              placeholder="e.g. Sri Murugan Distributors"
+                              style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Address</label>
+                            <textarea value={invoiceSettings.address || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, address: e.target.value })}
+                              placeholder="e.g. 45, Main Road, Madurai - 625001, Tamil Nadu"
+                              rows={2}
+                              style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'sans-serif' }} />
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '16px' }}>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Phone Number</label>
+                              <input type="tel" value={invoiceSettings.phone || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, phone: e.target.value })}
+                                placeholder="9876543210"
+                                style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>GST Number (optional)</label>
+                              <input type="text" value={invoiceSettings.gst_number || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, gst_number: e.target.value })}
+                                placeholder="33XXXXX1234X1ZX"
+                                style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>UPI ID <span style={{ fontWeight: 'normal', color: '#64748b' }}>(for QR payments)</span></label>
+                            <input type="text" value={invoiceSettings.upi_id || ''} onChange={(e) => setInvoiceSettings({ ...invoiceSettings, upi_id: e.target.value })}
+                              placeholder="e.g. 9876543210@okicici or name@upi"
+                              style={{ width: '100%', padding: '10px 14px', border: `1.5px solid ${invoiceSettings.upi_id ? '#16a34a' : '#cbd5e1'}`, borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }} />
+                            {invoiceSettings.upi_id && (
+                              <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#16a34a' }}>✅ Agents will see a UPI QR code when collecting payments</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Option A — Upload Letterhead */}
+                    {invoiceSettings.template_mode === 'upload' && (
+                      <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                        <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Upload Your Letterhead</h3>
+                        <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: '#64748b' }}>Upload your company letterhead as an image (PNG/JPG). Invoice data will be printed over it. Recommended size: A4 (2480 x 3508 px).</p>
+
+                        <label style={{ display: 'block', padding: '30px', backgroundColor: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: '8px', cursor: 'pointer', textAlign: 'center' }}>
+                          {isUploadingLetterhead ? (
+                            <p style={{ margin: '0', color: '#64748b', fontSize: '14px' }}>⏳ Uploading...</p>
+                          ) : letterheadUrl ? (
+                            <div>
+                              <img src={letterheadUrl} alt="Letterhead Preview" style={{ maxHeight: '200px', maxWidth: '100%', objectFit: 'contain', borderRadius: '4px', marginBottom: '12px' }} />
+                              <p style={{ margin: '0', fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>✅ Letterhead uploaded — click to replace</p>
+                            </div>
+                          ) : (
+                            <div>
+                              <p style={{ margin: '0 0 8px 0', fontSize: '32px' }}>📄</p>
+                              <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 'bold', color: '#475569' }}>Click to upload letterhead</p>
+                              <p style={{ margin: '0', fontSize: '12px', color: '#94a3b8' }}>PNG or JPG — max 50MB</p>
+                            </div>
+                          )}
+                          <input type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleLetterheadUpload} style={{ display: 'none' }} />
+                        </label>
+
+                        {letterheadUrl && (
+                          <div style={{ marginTop: '16px', padding: '12px 16px', backgroundColor: '#fffbeb', border: '1px solid #fbbf24', borderRadius: '6px', fontSize: '13px', color: '#92400e' }}>
+                            ⚠️ When printing, your letterhead will appear as a background. Make sure your letterhead has enough white space for the invoice data to be readable.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Save Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <button onClick={handleSaveInvoiceSettings} disabled={isSavingSettings}
+                        style={{ padding: '14px 32px', backgroundColor: '#0f172a', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '15px', cursor: isSavingSettings ? 'not-allowed' : 'pointer', opacity: isSavingSettings ? 0.7 : 1 }}>
+                        {isSavingSettings ? 'Saving...' : '💾 Save Invoice Settings'}
+                      </button>
+                      {settingsSaved && (
+                        <span style={{ fontSize: '14px', color: settingsSaved.includes('✅') ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{settingsSaved}</span>
+                      )}
+                    </div>
+
+                    {/* SMTP / Email */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>📧 Email Settings</h3>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>
+                        To enable emailing invoices, set <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_HOST</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_USER</code>, <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_PASS</code>, and <code style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>SMTP_FROM</code> in your <strong>.env.local</strong> file and restart the server. Gmail works out of the box with an App Password.
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: '240px' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Send a test email to</label>
+                          <input
+                            type="email"
+                            placeholder="you@example.com"
+                            value={smtpTestEmail}
+                            onChange={e => { setSmtpTestEmail(e.target.value); setSmtpTestResult(''); }}
+                            style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                        <button
+                          disabled={isSendingTestEmail || !smtpTestEmail.trim()}
+                          onClick={async () => {
+                            setIsSendingTestEmail(true);
+                            setSmtpTestResult('');
+                            try {
+                              const { data: { session } } = await supabase.auth.getSession();
+                              const res = await fetch('/api/email/test', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token || ''}` },
+                                body: JSON.stringify({ testEmail: smtpTestEmail.trim() }),
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error);
+                              setSmtpTestResult('✅ Test email sent! Check your inbox.');
+                            } catch (err) {
+                              setSmtpTestResult('❌ ' + err.message);
+                            } finally {
+                              setIsSendingTestEmail(false);
+                            }
+                          }}
+                          style={{ padding: '10px 22px', backgroundColor: isSendingTestEmail ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: isSendingTestEmail ? 'not-allowed' : 'pointer', height: '42px', whiteSpace: 'nowrap' }}
+                        >
+                          {isSendingTestEmail ? 'Sending...' : '📤 Send Test'}
+                        </button>
+                      </div>
+                      {smtpTestResult && (
+                        <p style={{ margin: '12px 0 0', fontSize: '13px', fontWeight: '500', color: smtpTestResult.includes('✅') ? '#16a34a' : '#dc2626' }}>
+                          {smtpTestResult}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Live Preview */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', color: '#475569' }}>🔍 Invoice Preview</h3>
+                      <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '30px', backgroundColor: '#fafafa', fontSize: '12px', fontFamily: 'Arial, sans-serif' }}>
+                        {invoiceSettings.template_mode === 'upload' && letterheadUrl ? (
+                          <div style={{ position: 'relative' }}>
+                            <img src={letterheadUrl} alt="Letterhead" style={{ width: '100%', opacity: 0.3, borderRadius: '4px' }} />
+                            <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                                <div><strong style={{ fontSize: '14px' }}>DELIVERY INVOICE</strong></div>
+                                <div style={{ textAlign: 'right', fontSize: '11px' }}><div>Bill No: ET-2026-482931-847</div><div>Date: {new Date().toLocaleDateString('en-IN')}</div></div>
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#333' }}>Bill To: [Shop Name] | Agent: [Agent Name]</div>
+                              <div style={{ marginTop: '10px', fontSize: '10px', color: '#555' }}>Products and amounts will appear here...</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0f172a', paddingBottom: '12px', marginBottom: '16px' }}>
+                              <div>
+                                {invoiceSettings.logo_url && <img src={invoiceSettings.logo_url} alt="Logo" style={{ height: '36px', objectFit: 'contain', marginBottom: '6px', display: 'block' }} />}
+                                <strong style={{ fontSize: '14px' }}>{invoiceSettings.company_name || 'Your Company Name'}</strong>
+                                <div style={{ color: '#555', fontSize: '11px', marginTop: '2px' }}>{invoiceSettings.address || 'Your Address'}</div>
+                                {invoiceSettings.phone && <div style={{ color: '#555', fontSize: '11px' }}>📞 {invoiceSettings.phone}</div>}
+                                {invoiceSettings.gst_number && <div style={{ color: '#555', fontSize: '11px' }}>GST: {invoiceSettings.gst_number}</div>}
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ backgroundColor: '#0f172a', color: '#fff', padding: '4px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', marginBottom: '6px', display: 'inline-block' }}>DELIVERY INVOICE</div>
+                                <div style={{ fontSize: '11px' }}>Bill No: ET-2026-482931-847</div>
+                                <div style={{ fontSize: '11px', color: '#555' }}>Date: {new Date().toLocaleDateString('en-IN')}</div>
+                              </div>
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                              <thead><tr style={{ backgroundColor: '#0f172a', color: '#fff' }}>
+                                <th style={{ padding: '6px 8px', textAlign: 'left' }}>Product</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Rate</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'center' }}>Qty</th>
+                                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
+                              </tr></thead>
+                              <tbody>
+                                <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                  <td style={{ padding: '6px 8px' }}>Sample Product A</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>₹100.00</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'center' }}>10 boxes</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>₹1,000.00</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                              <div style={{ backgroundColor: '#0f172a', color: '#fff', padding: '8px 16px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>Grand Total: ₹1,000.00</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
-            )}
+
+            ) : null}
           </div>
 
 
@@ -3941,8 +3970,7 @@ function OwnerDashboard() {
             { tab: 'finance',  icon: '📈', label: 'Finance'   },
             { tab: 'map',      icon: '🗺️', label: 'Directory' },
             { tab: 'shops',    icon: '🏪', label: 'Shops'     },
-            { tab: 'invoice',  icon: '🧾', label: 'Invoice'   },
-            { tab: 'admin',    icon: '👥', label: 'Admin'     },
+            { tab: 'settings', icon: '⚙️', label: 'Settings'  },
           ].map(({ tab, icon, label }) => (
             <button key={tab} onClick={() => handleNavClick(tab)} style={{ flex: 1, padding: '8px 2px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', cursor: 'pointer', color: activeTab === tab ? '#38bdf8' : '#64748b', borderTop: `2px solid ${activeTab === tab ? '#38bdf8' : 'transparent'}`, transition: 'color 0.15s' }}>
               <span style={{ fontSize: '17px', lineHeight: 1 }}>{icon}</span>
