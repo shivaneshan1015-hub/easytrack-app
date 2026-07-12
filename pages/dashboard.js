@@ -168,6 +168,7 @@ function OwnerDashboard() {
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
   const [shopDirSearch, setShopDirSearch] = useState('');
+  const [shopsViewMode, setShopsViewMode] = useState('list');
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [ledgerStatusFilter, setLedgerStatusFilter] = useState('all');
   const [ledgerAgentFilter, setLedgerAgentFilter] = useState('all');
@@ -702,8 +703,7 @@ function OwnerDashboard() {
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); loadCreditAlerts(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
-    else if (activeTab === 'map') { loadRouteMapLocations(); loadActiveAgentsList(); }
-    else if (activeTab === 'shops') loadShops();
+    else if (activeTab === 'shops') { loadShops(); loadRouteMapLocations(); loadActiveAgentsList(); }
     else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadAllLeaveRequests(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
@@ -1442,8 +1442,7 @@ function OwnerDashboard() {
           <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>
           <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>
           <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
-          <div onClick={() => handleNavClick('map')} style={tabStyle('map')}>🗺️ Shop Directory</div>
-          <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shop Management</div>
+          <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shops</div>
           <div onClick={() => handleNavClick('invoice')} style={tabStyle('invoice')}>🧾 Invoice Settings</div>
           <div onClick={() => handleNavClick('admin')} style={tabStyle('admin')}>👥 Management Panel</div>
         </nav>
@@ -1464,8 +1463,7 @@ function OwnerDashboard() {
             {activeTab === 'pending' && 'Today'}
             {activeTab === 'history' && 'Dispatch'}
             {activeTab === 'finance' && 'Financial Insights'}
-            {activeTab === 'map' && 'Shop Directory'}
-            {activeTab === 'shops' && 'Shop Management'}
+            {activeTab === 'shops' && 'Shops'}
             {activeTab === 'invoice' && 'Invoice Settings'}
             {activeTab === 'admin' && 'Management Panel'}
           </h1>
@@ -2300,8 +2298,169 @@ function OwnerDashboard() {
 
               </div>
 
-            ) : activeTab === 'map' ? (
+            ) : activeTab === 'shops' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+                {/* ── LIST / MAP TOGGLE ── */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {[
+                    { key: 'list', label: 'List View' },
+                    { key: 'map', label: 'Map View' },
+                  ].map(v => (
+                    <button key={v.key} onClick={() => setShopsViewMode(v.key)}
+                      style={{
+                        padding: '8px 20px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer',
+                        border: '1.5px solid ' + (shopsViewMode === v.key ? '#2563eb' : '#e2e8f0'),
+                        backgroundColor: shopsViewMode === v.key ? '#2563eb' : '#ffffff',
+                        color: shopsViewMode === v.key ? '#ffffff' : '#475569',
+                      }}>
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+
+                {shopsViewMode === 'list' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Add New Shop</h3>
+                      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', flexWrap: 'wrap', alignItems: isMobile ? 'stretch' : 'flex-end', marginTop: '20px' }}>
+                        <div style={{ flex: isMobile ? '1' : 'none' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Shop Name</label>
+                          <input type="text" placeholder="e.g. Sri Murugan Stores" value={newShopName} onChange={(e) => setNewShopName(e.target.value)}
+                            style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '250px', boxSizing: 'border-box' }} />
+                        </div>
+                        <div style={{ flex: isMobile ? '1' : 'none' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Phone</label>
+                          <input type="tel" placeholder="9876543210" value={newShopPhone} onChange={(e) => setNewShopPhone(e.target.value)}
+                            style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '180px', boxSizing: 'border-box' }} />
+                        </div>
+                        <div style={{ flex: isMobile ? '1' : 'none' }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Address</label>
+                          <input type="text" placeholder="Street, Area, City" value={newShopAddress} onChange={(e) => setNewShopAddress(e.target.value)}
+                            style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '260px', boxSizing: 'border-box' }} />
+                        </div>
+                        <button onClick={async () => {
+                          if (!newShopName.trim()) return alert('Enter shop name.');
+                          setIsAddingShop(true);
+                          const { error } = await supabase.from('shops').insert([{ name: newShopName.trim(), phone_number: newShopPhone.trim(), address: newShopAddress.trim() || null }]);
+                          setIsAddingShop(false);
+                          if (error) alert('Failed: ' + error.message);
+                          else { addToast(`✅ "${newShopName}" added!`); setNewShopName(''); setNewShopPhone(''); setNewShopAddress(''); loadShops(); }
+                        }} disabled={isAddingShop}
+                          style={{ padding: '10px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>
+                          {isAddingShop ? 'Adding...' : '➕ Add Shop'}
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                      <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
+                        <h3 style={{ margin: 0, fontSize: '16px' }}>All Shops ({shopsList.length})</h3>
+                      </div>
+                      <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Phone</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Address</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>GPS</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Credit Limit (₹)</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px', minWidth: '160px' }}>Credit Usage</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Added</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Actions</th>
+                        </tr></thead>
+                        <tbody>{shopsList.map((shop) => (
+                          <tr key={shop.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '14px 16px' }}>
+                              <input type="text" value={shop.name} onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, name: e.target.value } : s))}
+                                style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '14px', width: '180px' }} />
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <input type="tel" value={shop.phone_number || ''} onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, phone_number: e.target.value } : s))}
+                                style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '14px', width: '130px' }} />
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <input type="text" value={shop.address || ''} placeholder="Street, Area, City" onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, address: e.target.value } : s))}
+                                style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '200px' }} />
+                            </td>
+                            <td style={{ padding: '14px 16px', fontSize: '13px' }}>
+                              {shop.latitude && (
+                                <div style={{ color: '#16a34a', marginBottom: '4px' }}>
+                                  {parseFloat(shop.latitude).toFixed(4)}, {parseFloat(shop.longitude).toFixed(4)}
+                                </div>
+                              )}
+                              <button
+                                disabled={capturingGpsFor === shop.id}
+                                onClick={() => {
+                                  if (!navigator.geolocation) return alert('GPS not supported by this browser.');
+                                  setCapturingGpsFor(shop.id);
+                                  navigator.geolocation.getCurrentPosition(
+                                    (pos) => {
+                                      setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, latitude: pos.coords.latitude, longitude: pos.coords.longitude } : s));
+                                      setCapturingGpsFor(null);
+                                    },
+                                    () => { alert('Could not get location. Check browser permissions.'); setCapturingGpsFor(null); },
+                                    { enableHighAccuracy: true, timeout: 10000 }
+                                  );
+                                }}
+                                style={{ padding: '4px 8px', backgroundColor: shop.latitude ? '#f1f5f9' : '#eff6ff', color: shop.latitude ? '#475569' : '#2563eb', border: `1px solid ${shop.latitude ? '#e2e8f0' : '#bfdbfe'}`, borderRadius: '4px', cursor: capturingGpsFor === shop.id ? 'not-allowed' : 'pointer', fontSize: '11px', fontWeight: '600' }}>
+                                {capturingGpsFor === shop.id ? '⏳ Capturing…' : shop.latitude ? '📍 Re-capture' : '📍 Set GPS'}
+                              </button>
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <input
+                                type="number" min="0" step="100"
+                                value={shop.credit_limit ?? 0}
+                                onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, credit_limit: parseFloat(e.target.value) || 0 } : s))}
+                                placeholder="0 = no limit"
+                                style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '110px' }}
+                              />
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              {(() => {
+                                const limit = parseFloat(shop.credit_limit || 0);
+                                const used = parseFloat(shop.credit_used || 0);
+                                if (limit <= 0) return <span style={{ fontSize: '12px', color: '#94a3b8' }}>No limit</span>;
+                                const pct = Math.min(100, (used / limit) * 100);
+                                const barColor = pct >= 90 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#10b981';
+                                return (
+                                  <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                                      <span>₹{used.toLocaleString('en-IN')}</span>
+                                      <span>₹{limit.toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div style={{ height: '8px', borderRadius: '4px', backgroundColor: '#e2e8f0', overflow: 'hidden' }}>
+                                      <div style={{ height: '100%', width: `${pct}%`, backgroundColor: barColor, borderRadius: '4px', transition: 'width 0.3s' }} />
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: barColor, marginTop: '3px', fontWeight: '600' }}>{pct.toFixed(0)}% used</div>
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                            <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(shop.created_at).toLocaleDateString('en-IN')}</td>
+                            <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
+                              <button onClick={async () => {
+                                const updatePayload = { name: shop.name, phone_number: shop.phone_number, address: shop.address || null, credit_limit: shop.credit_limit ?? 0, latitude: shop.latitude || null, longitude: shop.longitude || null };
+                                const { error: saveError } = await supabase.from('shops').update(updatePayload).eq('id', shop.id);
+                                if (saveError) {
+                                  alert('Save failed: ' + saveError.message);
+                                } else {
+                                  addToast('✅ Shop saved!');
+                                }
+                              }} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
+                              <button onClick={async () => {
+                                if (!window.confirm(`Delete "${shop.name}"?`)) return;
+                                const { error } = await supabase.from('shops').delete().eq('id', shop.id);
+                                if (error) alert('Failed.'); else loadShops();
+                              }} style={{ padding: '6px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Delete</button>
+                            </td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                      </div>
+                      {shopsList.length === 0 && <p style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No shops yet.</p>}
+                    </div>
+                  </div>
+                ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
                     <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>🏪 All Shops ({registeredShops.length})</h3>
@@ -2481,147 +2640,7 @@ function OwnerDashboard() {
                 </div>
 
               </div>
-
-            ) : activeTab === 'shops' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Add New Shop</h3>
-                  <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', flexWrap: 'wrap', alignItems: isMobile ? 'stretch' : 'flex-end', marginTop: '20px' }}>
-                    <div style={{ flex: isMobile ? '1' : 'none' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Shop Name</label>
-                      <input type="text" placeholder="e.g. Sri Murugan Stores" value={newShopName} onChange={(e) => setNewShopName(e.target.value)}
-                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '250px', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ flex: isMobile ? '1' : 'none' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Phone</label>
-                      <input type="tel" placeholder="9876543210" value={newShopPhone} onChange={(e) => setNewShopPhone(e.target.value)}
-                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '180px', boxSizing: 'border-box' }} />
-                    </div>
-                    <div style={{ flex: isMobile ? '1' : 'none' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Address</label>
-                      <input type="text" placeholder="Street, Area, City" value={newShopAddress} onChange={(e) => setNewShopAddress(e.target.value)}
-                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '260px', boxSizing: 'border-box' }} />
-                    </div>
-                    <button onClick={async () => {
-                      if (!newShopName.trim()) return alert('Enter shop name.');
-                      setIsAddingShop(true);
-                      const { error } = await supabase.from('shops').insert([{ name: newShopName.trim(), phone_number: newShopPhone.trim(), address: newShopAddress.trim() || null }]);
-                      setIsAddingShop(false);
-                      if (error) alert('Failed: ' + error.message);
-                      else { addToast(`✅ "${newShopName}" added!`); setNewShopName(''); setNewShopPhone(''); setNewShopAddress(''); loadShops(); }
-                    }} disabled={isAddingShop}
-                      style={{ padding: '10px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>
-                      {isAddingShop ? 'Adding...' : '➕ Add Shop'}
-                    </button>
-                  </div>
-                </div>
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                  <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
-                    <h3 style={{ margin: 0, fontSize: '16px' }}>All Shops ({shopsList.length})</h3>
-                  </div>
-                  <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                    <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Phone</th>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Address</th>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>GPS</th>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Credit Limit (₹)</th>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px', minWidth: '160px' }}>Credit Usage</th>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Added</th>
-                      <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Actions</th>
-                    </tr></thead>
-                    <tbody>{shopsList.map((shop) => (
-                      <tr key={shop.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '14px 16px' }}>
-                          <input type="text" value={shop.name} onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, name: e.target.value } : s))}
-                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '14px', width: '180px' }} />
-                        </td>
-                        <td style={{ padding: '14px 16px' }}>
-                          <input type="tel" value={shop.phone_number || ''} onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, phone_number: e.target.value } : s))}
-                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '14px', width: '130px' }} />
-                        </td>
-                        <td style={{ padding: '14px 16px' }}>
-                          <input type="text" value={shop.address || ''} placeholder="Street, Area, City" onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, address: e.target.value } : s))}
-                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '200px' }} />
-                        </td>
-                        <td style={{ padding: '14px 16px', fontSize: '13px' }}>
-                          {shop.latitude && (
-                            <div style={{ color: '#16a34a', marginBottom: '4px' }}>
-                              {parseFloat(shop.latitude).toFixed(4)}, {parseFloat(shop.longitude).toFixed(4)}
-                            </div>
-                          )}
-                          <button
-                            disabled={capturingGpsFor === shop.id}
-                            onClick={() => {
-                              if (!navigator.geolocation) return alert('GPS not supported by this browser.');
-                              setCapturingGpsFor(shop.id);
-                              navigator.geolocation.getCurrentPosition(
-                                (pos) => {
-                                  setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, latitude: pos.coords.latitude, longitude: pos.coords.longitude } : s));
-                                  setCapturingGpsFor(null);
-                                },
-                                () => { alert('Could not get location. Check browser permissions.'); setCapturingGpsFor(null); },
-                                { enableHighAccuracy: true, timeout: 10000 }
-                              );
-                            }}
-                            style={{ padding: '4px 8px', backgroundColor: shop.latitude ? '#f1f5f9' : '#eff6ff', color: shop.latitude ? '#475569' : '#2563eb', border: `1px solid ${shop.latitude ? '#e2e8f0' : '#bfdbfe'}`, borderRadius: '4px', cursor: capturingGpsFor === shop.id ? 'not-allowed' : 'pointer', fontSize: '11px', fontWeight: '600' }}>
-                            {capturingGpsFor === shop.id ? '⏳ Capturing…' : shop.latitude ? '📍 Re-capture' : '📍 Set GPS'}
-                          </button>
-                        </td>
-                        <td style={{ padding: '14px 16px' }}>
-                          <input
-                            type="number" min="0" step="100"
-                            value={shop.credit_limit ?? 0}
-                            onChange={(e) => setShopsList(shopsList.map(s => s.id === shop.id ? { ...s, credit_limit: parseFloat(e.target.value) || 0 } : s))}
-                            placeholder="0 = no limit"
-                            style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '110px' }}
-                          />
-                        </td>
-                        <td style={{ padding: '14px 16px' }}>
-                          {(() => {
-                            const limit = parseFloat(shop.credit_limit || 0);
-                            const used = parseFloat(shop.credit_used || 0);
-                            if (limit <= 0) return <span style={{ fontSize: '12px', color: '#94a3b8' }}>No limit</span>;
-                            const pct = Math.min(100, (used / limit) * 100);
-                            const barColor = pct >= 90 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#10b981';
-                            return (
-                              <div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
-                                  <span>₹{used.toLocaleString('en-IN')}</span>
-                                  <span>₹{limit.toLocaleString('en-IN')}</span>
-                                </div>
-                                <div style={{ height: '8px', borderRadius: '4px', backgroundColor: '#e2e8f0', overflow: 'hidden' }}>
-                                  <div style={{ height: '100%', width: `${pct}%`, backgroundColor: barColor, borderRadius: '4px', transition: 'width 0.3s' }} />
-                                </div>
-                                <div style={{ fontSize: '11px', color: barColor, marginTop: '3px', fontWeight: '600' }}>{pct.toFixed(0)}% used</div>
-                              </div>
-                            );
-                          })()}
-                        </td>
-                        <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(shop.created_at).toLocaleDateString('en-IN')}</td>
-                        <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
-                          <button onClick={async () => {
-                            const updatePayload = { name: shop.name, phone_number: shop.phone_number, address: shop.address || null, credit_limit: shop.credit_limit ?? 0, latitude: shop.latitude || null, longitude: shop.longitude || null };
-                            const { error: saveError } = await supabase.from('shops').update(updatePayload).eq('id', shop.id);
-                            if (saveError) {
-                              alert('Save failed: ' + saveError.message);
-                            } else {
-                              addToast('✅ Shop saved!');
-                            }
-                          }} style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
-                          <button onClick={async () => {
-                            if (!window.confirm(`Delete "${shop.name}"?`)) return;
-                            const { error } = await supabase.from('shops').delete().eq('id', shop.id);
-                            if (error) alert('Failed.'); else loadShops();
-                          }} style={{ padding: '6px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Delete</button>
-                        </td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                  </div>
-                  {shopsList.length === 0 && <p style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No shops yet.</p>}
-                </div>
+                )}
               </div>
 
             ) : activeTab === 'invoice' ? (
