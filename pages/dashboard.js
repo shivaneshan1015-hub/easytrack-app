@@ -704,7 +704,8 @@ function OwnerDashboard() {
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
     else if (activeTab === 'shops') { loadShops(); loadRouteMapLocations(); loadActiveAgentsList(); }
-    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadAllLeaveRequests(); loadBeatPlan(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); }
+    else if (activeTab === 'routes') { loadBeatPlan(); loadShops(); loadActiveAgentsList(); loadRouteMapLocations(); }
+    else if (activeTab === 'admin') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadAllLeaveRequests(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); }
     else if (activeTab === 'invoice') loadInvoiceSettings();
   }, [activeTab]);
 
@@ -1443,6 +1444,7 @@ function OwnerDashboard() {
           <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>
           <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
           <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shops</div>
+          <div onClick={() => handleNavClick('routes')} style={tabStyle('routes')}>🗺️ Routes</div>
           <div onClick={() => handleNavClick('invoice')} style={tabStyle('invoice')}>🧾 Invoice Settings</div>
           <div onClick={() => handleNavClick('admin')} style={tabStyle('admin')}>👥 Management Panel</div>
         </nav>
@@ -1464,6 +1466,7 @@ function OwnerDashboard() {
             {activeTab === 'history' && 'Dispatch'}
             {activeTab === 'finance' && 'Financial Insights'}
             {activeTab === 'shops' && 'Shops'}
+            {activeTab === 'routes' && 'Routes'}
             {activeTab === 'invoice' && 'Invoice Settings'}
             {activeTab === 'admin' && 'Management Panel'}
           </h1>
@@ -2496,7 +2499,93 @@ function OwnerDashboard() {
                   </div>
                 </div>
 
-                {/* ── AI ROUTE PLANNER ── */}
+              </div>
+                )}
+              </div>
+
+            ) : activeTab === 'routes' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+
+                {/* ── WEEKLY BEAT PLAN ── */}
+                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>📅 Weekly Beat Plan</h3>
+                  <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Assign which shops each agent visits on which day of the week.</p>
+
+                  {/* Add assignment */}
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '24px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Day</label>
+                      <select value={beatNewDay} onChange={e => setBeatNewDay(e.target.value)}
+                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff' }}>
+                        {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d,i) => (
+                          <option key={i} value={String(i)}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Shop</label>
+                      <select value={beatNewShop} onChange={e => setBeatNewShop(e.target.value)}
+                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff', minWidth: '180px' }}>
+                        <option value="">-- Select Shop --</option>
+                        {shopsList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Agent</label>
+                      <select value={beatNewAgent} onChange={e => setBeatNewAgent(e.target.value)}
+                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff', minWidth: '160px' }}>
+                        <option value="">-- Select Agent --</option>
+                        {activeAgents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                      </select>
+                    </div>
+                    <button disabled={isAddingBeat || !beatNewShop || !beatNewAgent} onClick={async () => {
+                      setIsAddingBeat(true);
+                      const { error } = await supabase.from('beat_plans').upsert([{
+                        shop_id: beatNewShop,
+                        employee_name: beatNewAgent,
+                        day_of_week: parseInt(beatNewDay),
+                      }], { onConflict: 'shop_id,day_of_week' });
+                      setIsAddingBeat(false);
+                      if (error) alert('Failed: ' + error.message);
+                      else { setBeatNewShop(''); setBeatNewAgent(''); loadBeatPlan(); }
+                    }} style={{ padding: '9px 20px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '40px' }}>
+                      {isAddingBeat ? 'Saving...' : '➕ Assign'}
+                    </button>
+                  </div>
+
+                  {/* Beat plan table grouped by day */}
+                  {beatPlan.length === 0 ? (
+                    <p style={{ color: '#94a3b8', fontSize: '13px' }}>No assignments yet.</p>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                        <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Day</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Shop</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Agent</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Action</th>
+                        </tr></thead>
+                        <tbody>{beatPlan.map(bp => (
+                          <tr key={bp.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '10px 14px', fontWeight: '600', color: '#334155' }}>
+                              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][bp.day_of_week]}
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>{bp.shops?.name || '—'}</td>
+                            <td style={{ padding: '10px 14px', color: '#475569' }}>{bp.employee_name}</td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <button onClick={async () => {
+                                await supabase.from('beat_plans').delete().eq('id', bp.id);
+                                loadBeatPlan();
+                              }} style={{ padding: '4px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
+                            </td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── AI ROUTE OPTIMIZER ── */}
                 <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                     <span style={{ fontSize: '24px' }}>🤖</span>
@@ -2639,8 +2728,6 @@ function OwnerDashboard() {
                   <InteractiveRouteMap shops={optimizedRoute.length > 0 ? optimizedRoute : registeredShops} />
                 </div>
 
-              </div>
-                )}
               </div>
 
             ) : activeTab === 'invoice' ? (
@@ -3330,85 +3417,6 @@ function OwnerDashboard() {
                     </div>
                     <button type="submit" style={{ padding: '12px 24px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>📦 Add</button>
                   </form>
-                </div>
-
-                {/* 4. Daily Beat Plan */}
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>📅 Daily Beat Plan</h3>
-                  <p style={{ margin: '0 0 20px', fontSize: '13px', color: '#64748b' }}>Assign which shops each agent visits on which day of the week.</p>
-
-                  {/* Add assignment */}
-                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '24px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Day</label>
-                      <select value={beatNewDay} onChange={e => setBeatNewDay(e.target.value)}
-                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff' }}>
-                        {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d,i) => (
-                          <option key={i} value={String(i)}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Shop</label>
-                      <select value={beatNewShop} onChange={e => setBeatNewShop(e.target.value)}
-                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff', minWidth: '180px' }}>
-                        <option value="">-- Select Shop --</option>
-                        {shopsList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Agent</label>
-                      <select value={beatNewAgent} onChange={e => setBeatNewAgent(e.target.value)}
-                        style={{ padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', backgroundColor: '#ffffff', minWidth: '160px' }}>
-                        <option value="">-- Select Agent --</option>
-                        {activeAgents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                      </select>
-                    </div>
-                    <button disabled={isAddingBeat || !beatNewShop || !beatNewAgent} onClick={async () => {
-                      setIsAddingBeat(true);
-                      const { error } = await supabase.from('beat_plans').upsert([{
-                        shop_id: beatNewShop,
-                        employee_name: beatNewAgent,
-                        day_of_week: parseInt(beatNewDay),
-                      }], { onConflict: 'shop_id,day_of_week' });
-                      setIsAddingBeat(false);
-                      if (error) alert('Failed: ' + error.message);
-                      else { setBeatNewShop(''); setBeatNewAgent(''); loadBeatPlan(); }
-                    }} style={{ padding: '9px 20px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '40px' }}>
-                      {isAddingBeat ? 'Saving...' : '➕ Assign'}
-                    </button>
-                  </div>
-
-                  {/* Beat plan table grouped by day */}
-                  {beatPlan.length === 0 ? (
-                    <p style={{ color: '#94a3b8', fontSize: '13px' }}>No assignments yet.</p>
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                        <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Day</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Shop</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Agent</th>
-                          <th style={{ padding: '10px 14px', textAlign: 'left', color: '#475569' }}>Action</th>
-                        </tr></thead>
-                        <tbody>{beatPlan.map(bp => (
-                          <tr key={bp.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '10px 14px', fontWeight: '600', color: '#334155' }}>
-                              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][bp.day_of_week]}
-                            </td>
-                            <td style={{ padding: '10px 14px' }}>{bp.shops?.name || '—'}</td>
-                            <td style={{ padding: '10px 14px', color: '#475569' }}>{bp.employee_name}</td>
-                            <td style={{ padding: '10px 14px' }}>
-                              <button onClick={async () => {
-                                await supabase.from('beat_plans').delete().eq('id', bp.id);
-                                loadBeatPlan();
-                              }} style={{ padding: '4px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Remove</button>
-                            </td>
-                          </tr>
-                        ))}</tbody>
-                      </table>
-                    </div>
-                  )}
                 </div>
 
                 {/* 5. Product Catalog */}
