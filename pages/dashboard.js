@@ -139,6 +139,7 @@ function OwnerDashboard() {
   const [capturingGpsFor, setCapturingGpsFor] = useState(null);
   const [deliveryForm, setDeliveryForm] = useState(null);
   const [collectForm, setCollectForm] = useState(null);
+  const [logPaymentForm, setLogPaymentForm] = useState(null);
 
   const [selectedShopLedger, setSelectedShopLedger] = useState(null);
   const [shopLedgerHistory, setShopLedgerHistory] = useState([]);
@@ -1112,6 +1113,31 @@ function OwnerDashboard() {
     finally { setIsUpdating(false); }
   };
 
+  const handleLogPayment = async () => {
+    const amt = parseFloat(logPaymentForm.amount);
+    if (isNaN(amt) || amt <= 0) return alert('Enter a valid amount.');
+    const order = historyOrders.find(o => o.id === logPaymentForm.orderId);
+    if (!order) return;
+    const currentReceived = parseFloat(order.amount_received || 0);
+    const remaining = parseFloat(order.bill_amount) - currentReceived;
+    if (amt > remaining) return alert(`Cannot exceed outstanding amount ₹${remaining.toLocaleString('en-IN')}`);
+    setIsUpdating(true);
+    try {
+      const newReceived = currentReceived + amt;
+      const newPending = Math.max(0, parseFloat(order.bill_amount) - newReceived);
+      const { error } = await supabase.from('transactions').update({
+        amount_received: newReceived,
+        pending_amount: newPending,
+        payment_mode: logPaymentForm.mode,
+      }).eq('id', logPaymentForm.orderId);
+      if (error) throw error;
+      addToast(`✅ ₹${amt.toLocaleString('en-IN')} logged — Pending: ₹${newPending.toLocaleString('en-IN')}`);
+      setLogPaymentForm(null);
+      loadHistoryLedger();
+    } catch (err) { alert('Failed: ' + err.message); }
+    finally { setIsUpdating(false); }
+  };
+
   async function loadPendingLeaveRequests() {
     const { data } = await supabase
       .from('leaves')
@@ -1414,7 +1440,7 @@ function OwnerDashboard() {
         )}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
           <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>
-          <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatched Ledger</div>
+          <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>
           <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
           <div onClick={() => handleNavClick('map')} style={tabStyle('map')}>🗺️ Shop Directory</div>
           <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shop Management</div>
@@ -1436,7 +1462,7 @@ function OwnerDashboard() {
           )}
           <h1 style={{ margin: '0', fontSize: isMobile ? '20px' : '28px', fontWeight: 'bold', color: '#1e293b' }}>
             {activeTab === 'pending' && 'Today'}
-            {activeTab === 'history' && 'Dispatched Ledger'}
+            {activeTab === 'history' && 'Dispatch'}
             {activeTab === 'finance' && 'Financial Insights'}
             {activeTab === 'map' && 'Shop Directory'}
             {activeTab === 'shops' && 'Shop Management'}
@@ -1620,6 +1646,25 @@ function OwnerDashboard() {
 
             ) : activeTab === 'history' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* ── STATUS PILL FILTER BAR ── */}
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {[
+                    { key: 'all', label: 'All' },
+                    { key: 'enroute', label: 'En Route' },
+                    { key: 'credit', label: 'Delivered' },
+                    { key: 'settled', label: 'Collected' },
+                  ].map(f => (
+                    <button key={f.key} onClick={() => setLedgerStatusFilter(f.key)}
+                      style={{
+                        padding: '6px 16px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer',
+                        border: '1.5px solid ' + (ledgerStatusFilter === f.key ? '#2563eb' : '#e2e8f0'),
+                        backgroundColor: ledgerStatusFilter === f.key ? '#2563eb' : '#ffffff',
+                        color: ledgerStatusFilter === f.key ? '#ffffff' : '#475569',
+                      }}>
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
                 {/* ── SEARCH + FILTER BAR ── */}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', flex: 1 }}>
@@ -1630,13 +1675,6 @@ function OwnerDashboard() {
                       onChange={e => setLedgerSearch(e.target.value)}
                       style={{ padding: '8px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', minWidth: '220px', flex: 1 }}
                     />
-                    <select value={ledgerStatusFilter} onChange={e => setLedgerStatusFilter(e.target.value)}
-                      style={{ padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', backgroundColor: '#ffffff', cursor: 'pointer' }}>
-                      <option value="all">All Statuses</option>
-                      <option value="enroute">🚚 En Route</option>
-                      <option value="credit">⚠️ Credit</option>
-                      <option value="settled">✓ Settled</option>
-                    </select>
                     <select value={ledgerAgentFilter} onChange={e => setLedgerAgentFilter(e.target.value)}
                       style={{ padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '13px', backgroundColor: '#ffffff', cursor: 'pointer' }}>
                       <option value="all">All Agents</option>
@@ -1712,7 +1750,43 @@ function OwnerDashboard() {
                         </td>
                         <td style={{ padding: '16px' }}><span style={{ padding: '4px 12px', borderRadius: '50px', fontSize: '12px', fontWeight: 'bold', backgroundColor: bgStyle, color: textStyle }}>{badgeLabel}</span></td>
                         <td style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
+                            <button onClick={() => setLogPaymentForm({ orderId: order.id, amount: '', mode: 'Cash' })} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>💳 Log Payment</button>
+                          </div>
+                          {logPaymentForm?.orderId === order.id && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', minWidth: '180px' }}>
+                              <div style={{ fontSize: '12px', color: '#1e40af', fontWeight: '600' }}>Log Payment — {order.bill_number}</div>
+                              <input
+                                type="number" min="0.01" step="0.01"
+                                placeholder="Amount"
+                                value={logPaymentForm.amount}
+                                onChange={e => setLogPaymentForm({ ...logPaymentForm, amount: e.target.value })}
+                                style={{ padding: '6px 8px', border: '1px solid #bfdbfe', borderRadius: '4px', fontSize: '13px' }}
+                              />
+                              <select
+                                value={logPaymentForm.mode}
+                                onChange={e => setLogPaymentForm({ ...logPaymentForm, mode: e.target.value })}
+                                style={{ padding: '6px 8px', border: '1px solid #bfdbfe', borderRadius: '4px', fontSize: '13px' }}>
+                                <option value="Cash">💵 Cash</option>
+                                <option value="UPI">📱 UPI</option>
+                                <option value="Cheque">🏢 Cheque</option>
+                              </select>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                  onClick={handleLogPayment}
+                                  disabled={isUpdating}
+                                  style={{ flex: 1, padding: '6px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+                                  ✓ Confirm
+                                </button>
+                                <button
+                                  onClick={() => setLogPaymentForm(null)}
+                                  style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           <button onClick={() => { setEmailModal({ orderId: order.id, billNumber: order.bill_number, shopName: order.shops?.name }); setEmailRecipient(''); }} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📧 Email</button>
                           {order.status === 'delivered' && parseFloat(order.pending_amount) > 0 && (
                             collectForm?.orderId === order.id ? (
