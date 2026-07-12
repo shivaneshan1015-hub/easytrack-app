@@ -23,6 +23,8 @@ function AgentPortal() {
 
   const [shopGpsStatus, setShopGpsStatus] = useState('');
   const [isCapturingShopGps, setIsCapturingShopGps] = useState(false);
+  const [shopCreditInfo, setShopCreditInfo] = useState(null);
+  const [shopLastOrder, setShopLastOrder] = useState(null);
 
   // Phase 2
   const [shopSearchText, setShopSearchText] = useState('');
@@ -476,9 +478,9 @@ function AgentPortal() {
   }
 
   async function loadInitialData() {
-    const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude, phone_number');
+    const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude, phone_number, credit_limit');
     if (shopData) setShops(shopData);
-    const { data: prodData } = await supabase.from('products').select('id, name, unit_price').eq('is_active', true);
+    const { data: prodData } = await supabase.from('products').select('id, name, unit_price, inventory_stock').eq('is_active', true);
     if (prodData) setProductCatalog(prodData);
     try {
       const res = await fetch('/api/settings/public');
@@ -652,12 +654,27 @@ function AgentPortal() {
     setIsLoadingBills(false);
   };
 
-  const handleShopSelect = (shopId) => {
+  const handleShopSelect = async (shopId) => {
     setSelectedShop(shopId);
     setShopGpsStatus('');
+    setShopCreditInfo(null);
+    setShopLastOrder(null);
     if (!shopId) { setSelectedShopData(null); return; }
     const found = shops.find(s => s.id === shopId);
     setSelectedShopData(found || null);
+    if (!found) return;
+
+    const [{ data: openTx }, { data: lastOrder }] = await Promise.all([
+      supabase.from('transactions').select('bill_amount').eq('shop_id', shopId).neq('status', 'delivered'),
+      supabase.from('transactions').select('bill_amount, created_at').eq('shop_id', shopId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    const creditLimit = parseFloat(found.credit_limit || 0);
+    const creditUsed = (openTx || []).reduce((s, tx) => s + parseFloat(tx.bill_amount || 0), 0);
+    setShopCreditInfo({ limit: creditLimit, used: creditUsed });
+    if (lastOrder) {
+      const daysAgo = Math.floor((Date.now() - new Date(lastOrder.created_at).getTime()) / 86400000);
+      setShopLastOrder({ daysAgo, amount: parseFloat(lastOrder.bill_amount || 0) });
+    }
   };
 
   const captureShopGpsLocation = () => {
@@ -702,6 +719,17 @@ function AgentPortal() {
   const addOrderItemRow = () => setOrderItems([...orderItems, { productId: '', quantity: 1 }]);
   const removeOrderItemRow = (index) => {
     if (orderItems.length > 1) setOrderItems(orderItems.filter((_, idx) => idx !== index));
+  };
+
+  const incrementQty = (index) => {
+    const item = orderItems[index];
+    const prod = productCatalog.find(p => p.id === item.productId);
+    const max = prod ? Math.max(1, prod.inventory_stock ?? Infinity) : Infinity;
+    handleItemChange(index, 'quantity', Math.min(max, item.quantity + 1));
+  };
+  const decrementQty = (index) => {
+    const item = orderItems[index];
+    handleItemChange(index, 'quantity', Math.max(1, item.quantity - 1));
   };
 
   const handleOpenReturnForm = async (bill) => {
@@ -895,6 +923,7 @@ function AgentPortal() {
       setNewShopName(''); setWhatsappNumber('');
       setGpsCoordinates({ lat: null, lng: null }); setGpsStatus('Not Anchored');
       setIsNewShop(false); setSelectedShop(''); setSelectedShopData(null); setShopGpsStatus('');
+      setShopCreditInfo(null); setShopLastOrder(null);
       generateFreshBillTag(); loadInitialData();
     } catch (err) { alert(err.message); }
     finally { setIsSubmitting(false); }
@@ -902,6 +931,10 @@ function AgentPortal() {
 
   const selectedShopMissingGps = selectedShopData && !selectedShopData.latitude && !selectedShopData.longitude;
   const todayStr = new Date().toISOString().split('T')[0];
+  const grandTotal = orderItems.reduce((sum, item) => {
+    const prod = productCatalog.find(p => p.id === item.productId);
+    return sum + (prod ? prod.unit_price * item.quantity : 0);
+  }, 0);
 
   const tabStyle = (tab) => ({
     flex: 1, padding: '10px 6px', border: 'none', borderRadius: '6px',
@@ -912,7 +945,7 @@ function AgentPortal() {
   });
 
   return (
-    <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', padding: '20px 20px calc(74px + env(safe-area-inset-bottom))', color: '#0f172a' }}>
+    <div style={{ backgroundColor: '#ffffff', minHeight: '100vh', padding: `20px 20px calc(${activeTab === 'booking' ? 148 : 74}px + env(safe-area-inset-bottom))`, color: '#0f172a' }}>
       <div style={{ fontFamily: 'sans-serif', maxWidth: '500px', margin: '0 auto' }}>
 
         <header style={{ textAlign: 'center', marginBottom: '20px' }}>
@@ -959,7 +992,7 @@ function AgentPortal() {
               <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#64748b', textAlign: 'center' }}>Pending owner approval · visible in Pending Orders</p>
             </div>
           )}
-          <form onSubmit={handleSubmitOrder}>
+          <form id="bookOrderForm" onSubmit={handleSubmitOrder}>
             {myTarget && (() => {
               const salesPct = myTarget.sales_target > 0 ? Math.min(100, Math.round(myMonthSales / myTarget.sales_target * 100)) : 0;
               const collPct = myTarget.collection_target > 0 ? Math.min(100, Math.round(myMonthCollected / myTarget.collection_target * 100)) : 0;
@@ -995,21 +1028,20 @@ function AgentPortal() {
                 </div>
               );
             })()}
-            <div style={{ marginBottom: '20px' }}>
-              <p style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#0f172a' }}>
-                {(() => { const hour = new Date().getHours(); return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'; })()}, {profile?.full_name?.split(' ')[0] || 'there'}
-              </p>
-            </div>
-
-            <div style={{ backgroundColor: '#f8fafc', padding: '15px', borderRadius: '8px', marginBottom: '25px', border: '1px dashed #cbd5e1' }}>
-              <span style={{ fontSize: '13px', color: '#64748b', display: 'block', marginBottom: '4px' }}>Auto-Generated Bill Tag</span>
-              <strong style={{ fontSize: '18px', color: '#0f172a' }}>{billNumber}</strong>
+            <div style={{ marginBottom: '25px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'inline-block', flexShrink: 0 }}></span>
+                <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#0f172a' }}>
+                  {(() => { const hour = new Date().getHours(); return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'; })()}, {profile?.full_name?.split(' ')[0] || 'there'}
+                </p>
+              </div>
+              <p style={{ margin: '4px 0 0 18px', fontSize: '12px', color: '#94a3b8' }}>{billNumber}</p>
             </div>
 
             <div style={{ marginBottom: '25px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontWeight: 'bold' }}>Select Retailer Shop</label>
-                <button type="button" onClick={() => { setIsNewShop(!isNewShop); setSelectedShop(''); setSelectedShopData(null); setShopGpsStatus(''); }}
+                <button type="button" onClick={() => { setIsNewShop(!isNewShop); setSelectedShop(''); setSelectedShopData(null); setShopGpsStatus(''); setShopCreditInfo(null); setShopLastOrder(null); }}
                   style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
                   {isNewShop ? '← Existing' : '➕ New Shop'}
                 </button>
@@ -1034,6 +1066,27 @@ function AgentPortal() {
                   {selectedShopData && selectedShopData.latitude && (
                     <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#16a34a' }}>✅ GPS: {parseFloat(selectedShopData.latitude).toFixed(4)}, {parseFloat(selectedShopData.longitude).toFixed(4)}</p>
                   )}
+                  {shopCreditInfo && shopCreditInfo.limit > 0 && (() => {
+                    const pct = (shopCreditInfo.used / shopCreditInfo.limit) * 100;
+                    const available = Math.max(0, shopCreditInfo.limit - shopCreditInfo.used);
+                    const badge = pct >= 100
+                      ? { bg: '#fee2e2', color: '#dc2626', text: `Over limit — ₹${shopCreditInfo.used.toLocaleString('en-IN')} used of ₹${shopCreditInfo.limit.toLocaleString('en-IN')}` }
+                      : pct >= 80
+                      ? { bg: '#fef3c7', color: '#d97706', text: 'Near limit' }
+                      : { bg: '#dcfce7', color: '#16a34a', text: `₹${available.toLocaleString('en-IN')} available` };
+                    return (
+                      <span style={{ display: 'inline-block', marginTop: '10px', padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', backgroundColor: badge.bg, color: badge.color }}>
+                        {badge.text}
+                      </span>
+                    );
+                  })()}
+                  {shopLastOrder ? (
+                    <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                      Last order: {shopLastOrder.daysAgo === 0 ? 'today' : shopLastOrder.daysAgo === 1 ? '1 day ago' : `${shopLastOrder.daysAgo} days ago`} · ₹{shopLastOrder.amount.toLocaleString('en-IN')}
+                    </p>
+                  ) : selectedShop && (
+                    <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#94a3b8' }}>No previous orders</p>
+                  )}
                 </div>
               ) : (
                 <div style={{ padding: '15px', border: '2px solid #2563eb', borderRadius: '8px', backgroundColor: '#f8fafc' }}>
@@ -1056,7 +1109,7 @@ function AgentPortal() {
               </div>
               <input
                 type="text"
-                placeholder="🔍 Filter products by name..."
+                placeholder="Search products..."
                 value={bookingProductSearch}
                 onChange={e => setBookingProductSearch(e.target.value)}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontSize: '14px', marginBottom: '12px', boxSizing: 'border-box', backgroundColor: '#f8fafc' }}
@@ -1067,49 +1120,48 @@ function AgentPortal() {
                   : productCatalog;
                 const selectedProd = productCatalog.find(p => p.id === item.productId);
                 const rowTotal = selectedProd ? selectedProd.unit_price * item.quantity : 0;
+                const maxQty = selectedProd ? Math.max(1, selectedProd.inventory_stock ?? Infinity) : Infinity;
                 return (
-                  <div key={index} style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <select value={item.productId} onChange={(e) => handleItemChange(index, 'productId', e.target.value)}
-                        style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', fontSize: '14px' }}>
-                        <option value="">-- Choose Product --</option>
-                        {filtered.map((prod) => <option key={prod.id} value={prod.id}>{prod.name} · ₹{prod.unit_price}</option>)}
-                      </select>
-                      <input type="number" min="1" value={item.quantity} onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
-                        style={{ width: '62px', padding: '10px', borderRadius: '6px', border: '1.5px solid #cbd5e1', textAlign: 'center', backgroundColor: '#ffffff', color: '#0f172a', fontSize: '14px' }} />
-                      {orderItems.length > 1 && (
-                        <button type="button" onClick={() => removeOrderItemRow(index)}
-                          style={{ padding: '8px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>✕</button>
-                      )}
-                    </div>
-                    {rowTotal > 0 && (
-                      <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#475569', textAlign: 'right' }}>
-                        {item.quantity} × ₹{selectedProd.unit_price.toLocaleString('en-IN')} = <strong style={{ color: '#0f172a' }}>₹{rowTotal.toLocaleString('en-IN')}</strong>
-                      </p>
+                  <div key={index} style={{ marginBottom: '10px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    {selectedProd ? (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <p style={{ margin: 0, fontWeight: 'bold', fontSize: '15px', color: '#0f172a' }}>{selectedProd.name}</p>
+                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>₹{selectedProd.unit_price.toLocaleString('en-IN')} · {selectedProd.inventory_stock ?? 0} in stock</p>
+                          </div>
+                          {orderItems.length > 1 && (
+                            <button type="button" onClick={() => removeOrderItemRow(index)}
+                              style={{ padding: '4px 8px', background: 'none', border: 'none', color: '#dc2626', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px' }}>✕</button>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px' }}>
+                          <button type="button" onClick={() => decrementQty(index)} disabled={item.quantity <= 1}
+                            style={{ width: '36px', height: '36px', borderRadius: '50%', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', fontSize: '18px', fontWeight: 'bold', color: item.quantity <= 1 ? '#cbd5e1' : '#0f172a', cursor: item.quantity <= 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>−</button>
+                          <span style={{ minWidth: '24px', textAlign: 'center', fontSize: '16px', fontWeight: 'bold' }}>{item.quantity}</span>
+                          <button type="button" onClick={() => incrementQty(index)} disabled={item.quantity >= maxQty}
+                            style={{ width: '36px', height: '36px', borderRadius: '50%', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', fontSize: '18px', fontWeight: 'bold', color: item.quantity >= maxQty ? '#cbd5e1' : '#0f172a', cursor: item.quantity >= maxQty ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
+                          <span style={{ marginLeft: 'auto', fontSize: '13px', color: '#475569' }}>= <strong style={{ color: '#0f172a' }}>₹{rowTotal.toLocaleString('en-IN')}</strong></span>
+                        </div>
+                      </>
+                    ) : filtered.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>No products match your search.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {filtered.slice(0, 8).map(prod => (
+                          <button type="button" key={prod.id} onClick={() => handleItemChange(index, 'productId', prod.id)}
+                            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', textAlign: 'left' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#0f172a' }}>{prod.name}</span>
+                            <span style={{ fontSize: '12px', color: '#64748b' }}>₹{prod.unit_price.toLocaleString('en-IN')} · {prod.inventory_stock ?? 0} in stock</span>
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
                 );
               })}
-              <button type="button" onClick={addOrderItemRow} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>➕ Add Product Line</button>
+              <button type="button" onClick={addOrderItemRow} style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>➕ Add product</button>
             </div>
-
-            {(() => {
-              const grandTotal = orderItems.reduce((sum, item) => {
-                const prod = productCatalog.find(p => p.id === item.productId);
-                return sum + (prod ? prod.unit_price * item.quantity : 0);
-              }, 0);
-              return grandTotal > 0 ? (
-                <div style={{ marginBottom: '16px', padding: '14px 18px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '2px solid #bfdbfe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e40af' }}>Order Total</span>
-                  <span style={{ fontSize: '22px', fontWeight: 'bold', color: '#1e40af' }}>₹{grandTotal.toLocaleString('en-IN')}</span>
-                </div>
-              ) : null;
-            })()}
-
-            <button type="submit" disabled={isSubmitting}
-              style={{ width: '100%', padding: '16px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '18px', fontWeight: 'bold', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
-              {isSubmitting ? 'Submitting...' : '🚀 Submit Order'}
-            </button>
           </form>
           </>
 
@@ -2094,6 +2146,22 @@ function AgentPortal() {
                 ✓ Payment Received
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sticky order total bar */}
+      {activeTab === 'booking' && (
+        <div style={{ position: 'fixed', bottom: 'calc(58px + env(safe-area-inset-bottom))', left: 0, right: 0, backgroundColor: '#185FA5', zIndex: 90, padding: '14px 20px', boxSizing: 'border-box' }}>
+          <div style={{ maxWidth: '500px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+            <div>
+              <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.75)', fontWeight: '500' }}>Order total</p>
+              <p style={{ margin: '2px 0 0', fontSize: '24px', fontWeight: 'bold', color: '#ffffff' }}>₹{grandTotal.toLocaleString('en-IN')}</p>
+            </div>
+            <button type="submit" form="bookOrderForm" disabled={isSubmitting || grandTotal === 0}
+              style={{ padding: '14px 28px', backgroundColor: '#ffffff', color: '#185FA5', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: 'bold', cursor: (isSubmitting || grandTotal === 0) ? 'not-allowed' : 'pointer', opacity: (isSubmitting || grandTotal === 0) ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+              {isSubmitting ? 'Submitting...' : 'Submit order'}
+            </button>
           </div>
         </div>
       )}
