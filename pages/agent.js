@@ -87,11 +87,24 @@ function AgentPortal() {
 
   // Expenses
   const [myExpenses, setMyExpenses] = useState([]);
-  const [expenseCategory, setExpenseCategory] = useState('Travel');
+  const [expenseCategory, setExpenseCategory] = useState('Fuel');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseNote, setExpenseNote] = useState('');
   const [expenseDate, setExpenseDate] = useState('');
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+  const [expenseFilter, setExpenseFilter] = useState('all');
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [receiptPreview, setReceiptPreview] = useState(null);
+
+  const EXPENSE_CATEGORIES = [
+    { name: 'Fuel', icon: '⛽' },
+    { name: 'Food', icon: '🥣' },
+    { name: 'Travel', icon: '🚌' },
+    { name: 'Phone recharge', icon: '📱' },
+    { name: 'Toll', icon: '🛣️' },
+    { name: 'Parking', icon: '🅿️' },
+    { name: 'Other', icon: '⋯' },
+  ];
 
   // End-of-day summary
   const [eodSummary, setEodSummary] = useState(null);
@@ -274,28 +287,51 @@ function AgentPortal() {
     if (data) setMyExpenses(data);
   }
 
+  const handleReceiptSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setReceiptFile(file);
+    setReceiptPreview(URL.createObjectURL(file));
+  };
+
   async function handleSubmitExpense(e) {
     e.preventDefault();
     const amt = parseFloat(expenseAmount);
     if (isNaN(amt) || amt <= 0) return alert('Enter a valid amount.');
     if (!expenseDate) return alert('Select an expense date.');
     setIsSubmittingExpense(true);
-    const { error } = await supabase.from('agent_expenses').insert([{
-      agent_name: profile?.full_name || selectedEmployee,
-      category: expenseCategory,
-      amount: amt,
-      note: expenseNote.trim() || null,
-      expense_date: expenseDate,
-      status: 'pending',
-    }]);
-    setIsSubmittingExpense(false);
-    if (error) return alert('Failed to submit: ' + error.message);
-    addToast(`✅ Expense submitted — ₹${amt.toLocaleString('en-IN')} (${expenseCategory})`);
-    setExpenseAmount('');
-    setExpenseNote('');
-    setExpenseDate('');
-    setExpenseCategory('Travel');
-    loadMyExpenses();
+    try {
+      let receiptUrl = null;
+      if (receiptFile) {
+        const fileName = `receipt-${profile?.id}-${Date.now()}.${receiptFile.name.split('.').pop()}`;
+        const { error: upErr } = await supabase.storage.from('expense-receipts').upload(fileName, receiptFile);
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('expense-receipts').getPublicUrl(fileName);
+        receiptUrl = urlData.publicUrl;
+      }
+      const { error } = await supabase.from('agent_expenses').insert([{
+        agent_name: profile?.full_name || selectedEmployee,
+        category: expenseCategory,
+        amount: amt,
+        note: expenseNote.trim() || null,
+        expense_date: expenseDate,
+        status: 'pending',
+        receipt_url: receiptUrl,
+      }]);
+      if (error) throw error;
+      addToast(`✅ Expense submitted — ₹${amt.toLocaleString('en-IN')} (${expenseCategory})`);
+      setExpenseAmount('');
+      setExpenseNote('');
+      setExpenseDate('');
+      setExpenseCategory('Fuel');
+      setReceiptFile(null);
+      setReceiptPreview(null);
+      loadMyExpenses();
+    } catch (err) {
+      alert('Failed to submit: ' + err.message);
+    } finally {
+      setIsSubmittingExpense(false);
+    }
   }
 
   async function generateEodSummary() {
@@ -935,6 +971,15 @@ function AgentPortal() {
     const prod = productCatalog.find(p => p.id === item.productId);
     return sum + (prod ? prod.unit_price * item.quantity : 0);
   }, 0);
+
+  const nowDate = new Date();
+  const thisMonthExpenses = myExpenses.filter(e => {
+    const d = new Date(e.expense_date);
+    return d.getMonth() === nowDate.getMonth() && d.getFullYear() === nowDate.getFullYear();
+  });
+  const claimedThisMonth = thisMonthExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+  const approvedThisMonth = thisMonthExpenses.filter(e => e.status === 'approved').reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+  const filteredExpenses = myExpenses.filter(e => expenseFilter === 'all' || e.status === expenseFilter);
 
   const tabStyle = (tab) => ({
     flex: 1, padding: '10px 6px', border: 'none', borderRadius: '6px',
@@ -1942,6 +1987,18 @@ function AgentPortal() {
         ) : activeTab === 'expenses' ? (
           /* ── EXPENSES TAB ── */
           <div>
+            {/* Monthly summary */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#64748b', fontWeight: '500' }}>Claimed this month</p>
+                <p style={{ margin: 0, fontSize: '22px', fontWeight: 'bold', color: '#0f172a' }}>₹{claimedThisMonth.toLocaleString('en-IN')}</p>
+              </div>
+              <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#EAF3DE', border: '1px solid #EAF3DE' }}>
+                <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#3f6212', fontWeight: '500' }}>Approved</p>
+                <p style={{ margin: 0, fontSize: '22px', fontWeight: 'bold', color: '#3f6212' }}>₹{approvedThisMonth.toLocaleString('en-IN')}</p>
+              </div>
+            </div>
+
             {/* Submit Expense */}
             <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', marginBottom: '20px' }}>
               <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 'bold' }}>💰 Log an Expense</h3>
@@ -1949,11 +2006,11 @@ function AgentPortal() {
               <form onSubmit={handleSubmitExpense} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div>
                   <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Category</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                    {['Travel', 'Food', 'Phone', 'Accommodation', 'Entertainment', 'Other'].map(cat => (
-                      <button key={cat} type="button" onClick={() => setExpenseCategory(cat)}
-                        style={{ padding: '10px 6px', borderRadius: '8px', border: `2px solid ${expenseCategory === cat ? '#2563eb' : '#e2e8f0'}`, backgroundColor: expenseCategory === cat ? '#eff6ff' : '#f8fafc', color: expenseCategory === cat ? '#2563eb' : '#475569', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
-                        {cat === 'Travel' ? '🚗' : cat === 'Food' ? '🍱' : cat === 'Phone' ? '📱' : cat === 'Accommodation' ? '🏨' : cat === 'Entertainment' ? '🎉' : '📦'} {cat}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    {EXPENSE_CATEGORIES.map(cat => (
+                      <button key={cat.name} type="button" onClick={() => setExpenseCategory(cat.name)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 10px', borderRadius: '10px', border: `2px solid ${expenseCategory === cat.name ? '#2563eb' : '#e2e8f0'}`, backgroundColor: expenseCategory === cat.name ? '#eff6ff' : '#f8fafc', color: expenseCategory === cat.name ? '#2563eb' : '#475569', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', textAlign: 'left' }}>
+                        <span style={{ fontSize: '18px' }}>{cat.icon}</span> {cat.name}
                       </button>
                     ))}
                   </div>
@@ -1976,6 +2033,18 @@ function AgentPortal() {
                   <input type="text" placeholder="e.g. Petrol for route, Client lunch" value={expenseNote} onChange={e => setExpenseNote(e.target.value)}
                     style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '2px solid #cbd5e1', fontSize: '15px', boxSizing: 'border-box', color: '#0f172a' }} />
                 </div>
+                <div>
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>Receipt (optional)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '8px', border: '2px dashed #cbd5e1', backgroundColor: '#f8fafc', color: '#475569', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                      📷 Add receipt photo
+                      <input type="file" accept="image/*" capture="camera" onChange={handleReceiptSelect} style={{ display: 'none' }} />
+                    </label>
+                    {receiptPreview && (
+                      <img src={receiptPreview} alt="Receipt preview" style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                    )}
+                  </div>
+                </div>
                 <button type="submit" disabled={isSubmittingExpense}
                   style={{ padding: '14px', backgroundColor: isSubmittingExpense ? '#94a3b8' : '#2563eb', color: '#ffffff', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: isSubmittingExpense ? 'not-allowed' : 'pointer' }}>
                   {isSubmittingExpense ? 'Submitting...' : '✅ Submit Expense'}
@@ -1985,28 +2054,47 @@ function AgentPortal() {
 
             {/* My Expense History */}
             <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: '16px', fontWeight: 'bold' }}>📋 My Expense History</h3>
-              {myExpenses.length === 0 ? (
-                <p style={{ color: '#64748b', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>No expenses submitted yet.</p>
+              <h3 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: 'bold' }}>📋 My Expense History</h3>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'pending', label: 'Pending' },
+                  { key: 'approved', label: 'Approved' },
+                  { key: 'rejected', label: 'Rejected' },
+                ].map(f => (
+                  <button key={f.key} type="button" onClick={() => setExpenseFilter(f.key)}
+                    style={{ padding: '6px 16px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', border: `1.5px solid ${expenseFilter === f.key ? '#2563eb' : '#cbd5e1'}`, backgroundColor: expenseFilter === f.key ? '#2563eb' : '#ffffff', color: expenseFilter === f.key ? '#ffffff' : '#475569' }}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {filteredExpenses.length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>No expenses found.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {myExpenses.map(exp => {
+                  {filteredExpenses.map(exp => {
                     const isPending = exp.status === 'pending';
                     const isApproved = exp.status === 'approved';
+                    const catIcon = EXPENSE_CATEGORIES.find(c => c.name === exp.category)?.icon || '💰';
                     return (
                       <div key={exp.id} style={{ padding: '12px 16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: `1px solid ${isApproved ? '#bbf7d0' : isPending ? '#e2e8f0' : '#fecaca'}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                              <span style={{ fontWeight: 'bold', fontSize: '14px' }}>₹{parseFloat(exp.amount).toLocaleString('en-IN')}</span>
-                              <span style={{ fontSize: '12px', backgroundColor: '#f1f5f9', color: '#475569', padding: '1px 8px', borderRadius: '10px' }}>{exp.category}</span>
-                            </div>
-                            {exp.note && <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>{exp.note}</p>}
-                            <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#94a3b8' }}>{new Date(exp.expense_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                          </div>
-                          <span style={{ flexShrink: 0, padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '14px' }}>{catIcon} {exp.category}</span>
+                          <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#0f172a' }}>₹{parseFloat(exp.amount).toLocaleString('en-IN')}</span>
+                        </div>
+                        <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#64748b' }}>
+                          {new Date(exp.expense_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{exp.note ? ` · ${exp.note}` : ''}
+                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
                             {isApproved ? '✓ Approved' : isPending ? '⏳ Pending' : '✕ Rejected'}
                           </span>
+                          {exp.receipt_url && (
+                            <a href={exp.receipt_url} target="_blank" rel="noopener noreferrer"
+                              style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', backgroundColor: '#f1f5f9', color: '#475569', textDecoration: 'none' }}>
+                              📷 Receipt
+                            </a>
+                          )}
                         </div>
                       </div>
                     );
