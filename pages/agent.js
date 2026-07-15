@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth, withAuth } from '../hooks/useAuth';
 import { checkCreditAvailable } from '../lib/credit';
+import { setCachedOpenBills, getCachedOpenBills, enqueueDeliveryAction, subscribeOutbox } from '../lib/offlineStore';
+import { startSyncEngine, isNetworkError } from '../lib/syncEngine';
 
 function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
@@ -36,6 +38,8 @@ function AgentPortal() {
   const [paymentMode, setPaymentMode] = useState('Cash');
   const [isProcessingDelivery, setIsProcessingDelivery] = useState(false);
   const [isLoadingBills, setIsLoadingBills] = useState(false);
+  const [outboxItems, setOutboxItems] = useState([]);
+  const [isOfflineBillsView, setIsOfflineBillsView] = useState(false);
 
   // Leave states
   const [leaveStartDate, setLeaveStartDate] = useState('');
@@ -514,8 +518,16 @@ function AgentPortal() {
   }
 
   async function loadInitialData() {
-    const { data: shopData } = await supabase.from('shops').select('id, name, latitude, longitude, phone_number, credit_limit');
-    if (shopData) setShops(shopData);
+    const { data: shopData, error: shopErr } = await supabase.from('shops').select('id, name, latitude, longitude, phone_number, credit_limit');
+    if (shopData) {
+      setShops(shopData);
+      try { localStorage.setItem('et_shops_cache_v1', JSON.stringify({ shops: shopData, cachedAt: Date.now() })); } catch (_) {}
+    } else if (shopErr) {
+      try {
+        const cached = JSON.parse(localStorage.getItem('et_shops_cache_v1') || 'null');
+        if (cached?.shops) setShops(cached.shops);
+      } catch (_) {}
+    }
     const { data: prodData } = await supabase.from('products').select('id, name, unit_price, inventory_stock').eq('is_active', true);
     if (prodData) setProductCatalog(prodData);
     try {
@@ -526,6 +538,20 @@ function AgentPortal() {
         if (settings.company_name) setOwnerCompanyName(settings.company_name);
       }
     } catch (_) {}
+  }
+
+  async function loadMyOpenBills() {
+    const agentName = profile?.full_name || selectedEmployee;
+    if (!agentName) return;
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('id, shop_id, bill_number, bill_amount, amount_received, pending_amount, status, created_at')
+      .eq('employee_name', agentName)
+      .or('status.eq.approved,and(status.eq.delivered,pending_amount.gt.0)')
+      .order('created_at', { ascending: true });
+    if (data) {
+      setCachedOpenBills(data);
+    }
   }
 
   async function loadLeaveHistory() {
@@ -547,6 +573,24 @@ function AgentPortal() {
     }
     loadMyTarget();
   }, [profile]);
+
+  useEffect(() => {
+    if (!profile?.full_name) return;
+    loadMyOpenBills();
+  }, [profile?.full_name]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const unsubscribe = subscribeOutbox(setOutboxItems);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/agent' }).catch(() => {});
+    }
+    const stopSyncEngine = startSyncEngine(supabase);
+    return () => {
+      unsubscribe();
+      stopSyncEngine();
+    };
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'leave' && profile?.id) loadLeaveHistory();
@@ -649,45 +693,57 @@ function AgentPortal() {
     setShowShopStatement(false);
     setLastPayment(null);
     setIsLoadingBills(true);
+    setIsOfflineBillsView(false);
 
-    const [pendingRes, deliveredRes, stmtRes] = await Promise.all([
-      supabase
-        .from('transactions')
-        .select('id, bill_number, bill_amount, amount_received, pending_amount, status')
-        .eq('shop_id', shop.id)
-        .or('status.eq.approved,and(status.eq.delivered,pending_amount.gt.0)')
-        .order('created_at', { ascending: true }),
-      supabase
-        .from('transactions')
-        .select('id, bill_number, bill_amount, created_at')
-        .eq('shop_id', shop.id)
-        .eq('status', 'delivered')
-        .order('created_at', { ascending: false })
-        .limit(10),
-      supabase
-        .from('transactions')
-        .select('id, bill_number, bill_amount, amount_received, pending_amount, status, created_at')
-        .eq('shop_id', shop.id)
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ]);
+    try {
+      const [pendingRes, deliveredRes, stmtRes] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('id, bill_number, bill_amount, amount_received, pending_amount, status')
+          .eq('shop_id', shop.id)
+          .or('status.eq.approved,and(status.eq.delivered,pending_amount.gt.0)')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('transactions')
+          .select('id, bill_number, bill_amount, created_at')
+          .eq('shop_id', shop.id)
+          .eq('status', 'delivered')
+          .order('created_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('transactions')
+          .select('id, bill_number, bill_amount, amount_received, pending_amount, status, created_at')
+          .eq('shop_id', shop.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ]);
 
-    if (!pendingRes.error && pendingRes.data) setPendingBills(pendingRes.data);
-    if (!stmtRes.error && stmtRes.data) setShopStatement(stmtRes.data);
+      if (pendingRes.error) throw pendingRes.error;
+      setPendingBills(pendingRes.data || []);
+      if (!stmtRes.error && stmtRes.data) setShopStatement(stmtRes.data);
 
-    const deliveredData = deliveredRes.error ? [] : (deliveredRes.data || []);
-    if (deliveredData.length > 0) {
-      const txIds = deliveredData.map(b => b.id);
-      const { data: existingReturns } = await supabase
-        .from('returns')
-        .select('transaction_id')
-        .in('transaction_id', txIds);
-      const returnedSet = new Set((existingReturns || []).map(r => r.transaction_id));
-      setDeliveredBills(deliveredData.filter(b => !returnedSet.has(b.id)));
-    } else {
+      const deliveredData = deliveredRes.error ? [] : (deliveredRes.data || []);
+      if (deliveredData.length > 0) {
+        const txIds = deliveredData.map(b => b.id);
+        const { data: existingReturns } = await supabase
+          .from('returns')
+          .select('transaction_id')
+          .in('transaction_id', txIds);
+        const returnedSet = new Set((existingReturns || []).map(r => r.transaction_id));
+        setDeliveredBills(deliveredData.filter(b => !returnedSet.has(b.id)));
+      } else {
+        setDeliveredBills([]);
+      }
+    } catch (err) {
+      // Network-shaped failure (or any failure fetching the live pending-bills list) —
+      // fall back to the prefetched, cached "my open bills" list filtered to this shop.
+      const cachedBills = await getCachedOpenBills();
+      setPendingBills(cachedBills.filter(b => b.shop_id === shop.id));
+      setIsOfflineBillsView(true);
       setDeliveredBills([]);
+    } finally {
+      setIsLoadingBills(false);
     }
-    setIsLoadingBills(false);
   };
 
   const handleShopSelect = async (shopId) => {
@@ -859,7 +915,10 @@ function AgentPortal() {
     if (newCashInput > parseFloat(matchedOrder.pending_amount)) return alert(`Max: ₹${matchedOrder.pending_amount}`);
 
     setIsProcessingDelivery(true);
+    const clientRef = crypto.randomUUID();
     try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('offline');
+
       const updatedAmountReceived = parseFloat(matchedOrder.amount_received || 0) + newCashInput;
       const finalRemainingPending = parseFloat(matchedOrder.bill_amount) - updatedAmountReceived;
       const { error } = await supabase.from('transactions').update({
@@ -868,10 +927,9 @@ function AgentPortal() {
         delivered_at: new Date().toISOString()
       }).eq('id', matchedOrder.id).select();
 
-      if (error) { alert('Update failed: ' + error.message); return; }
-      if (newCashInput > 0) {
-        await supabase.from('bill_payments').insert({ transaction_id: matchedOrder.id, amount: newCashInput, payment_mode: paymentMode });
-      }
+      if (error) throw error;
+      await supabase.from('bill_payments').insert({ transaction_id: matchedOrder.id, amount: newCashInput, payment_mode: paymentMode, client_ref: clientRef });
+
       addToast(`✅ Collected ₹${newCashInput.toLocaleString('en-IN')} — Remaining: ₹${finalRemainingPending.toLocaleString('en-IN')}`);
       setLastPayment({
         billNumber: matchedOrder.bill_number,
@@ -880,12 +938,42 @@ function AgentPortal() {
         total: parseFloat(matchedOrder.bill_amount),
         shopPhone: selectedDeliveryShop?.phone_number,
       });
-      setMatchedOrder(null); setAmountReceived('');
-      loadVanBalance();
-      if (selectedDeliveryShop) handleDeliveryShopSelect(selectedDeliveryShop);
     } catch (err) {
-      alert('Failed: ' + err.message);
-    } finally { setIsProcessingDelivery(false); }
+      if (!isNetworkError(err)) {
+        alert('Failed: ' + err.message);
+        setIsProcessingDelivery(false);
+        return;
+      }
+      // Network-shaped failure — queue instead of losing the confirmation. Replay recomputes
+      // amount_received from the live row at sync time (see lib/syncEngine.js), so this only
+      // ever stores the incremental cash amount, never a total.
+      await enqueueDeliveryAction({
+        clientRef,
+        type: 'confirm_delivery',
+        transactionId: matchedOrder.id,
+        billNumber: matchedOrder.bill_number,
+        shopName: selectedDeliveryShop?.name,
+        shopId: selectedDeliveryShop?.id,
+        cashAmount: newCashInput,
+        paymentMode,
+        collectedAt: new Date().toISOString(),
+        status: 'pending',
+        attempts: 0,
+        lastError: null,
+      });
+      addToast('⏳ Saved offline — will sync when back online');
+      setLastPayment({
+        billNumber: matchedOrder.bill_number,
+        collected: newCashInput,
+        remaining: Math.max(0, parseFloat(matchedOrder.pending_amount) - newCashInput),
+        total: parseFloat(matchedOrder.bill_amount),
+        shopPhone: selectedDeliveryShop?.phone_number,
+      });
+    }
+    setMatchedOrder(null); setAmountReceived('');
+    loadVanBalance();
+    if (selectedDeliveryShop) handleDeliveryShopSelect(selectedDeliveryShop);
+    setIsProcessingDelivery(false);
   };
 
   const handleSubmitOrder = async (e) => {
@@ -1004,6 +1092,11 @@ function AgentPortal() {
             <span style={{ fontSize: '13px', color: '#166534', fontWeight: '500' }}>{profile?.full_name || selectedEmployee || 'Field Agent'}</span>
             <button onClick={signOut} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '12px', cursor: 'pointer', padding: '0 0 0 6px', borderLeft: '1px solid #d1fae5' }}>Sign out</button>
           </div>
+          {outboxItems.length > 0 && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '8px', backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: '20px', padding: '4px 14px' }}>
+              <span style={{ fontSize: '12px', color: '#854d0e', fontWeight: '600' }}>🔄 {outboxItems.length} pending sync</span>
+            </div>
+          )}
         </header>
 
         {/* Tabs */}
@@ -1660,10 +1753,16 @@ function AgentPortal() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {isOfflineBillsView && (
+                      <p style={{ margin: '0 0 4px', fontSize: '12px', color: '#92400e', backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: '6px', padding: '8px 10px' }}>
+                        ⚠️ Offline — showing cached bills, may not reflect the very latest activity.
+                      </p>
+                    )}
                     <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>{pendingBills.length} pending bill{pendingBills.length > 1 ? 's' : ''}:</p>
                     {pendingBills.map((bill) => {
                       const isCredit = bill.status === 'delivered';
                       const isSelected = matchedOrder?.id === bill.id;
+                      const isQueued = outboxItems.some(o => o.transactionId === bill.id);
                       return (
                         <div key={bill.id} onClick={() => { setMatchedOrder({ ...bill, shops: selectedDeliveryShop }); setAmountReceived(''); }}
                           style={{ padding: '14px 16px', borderRadius: '8px', cursor: 'pointer', border: isSelected ? '2px solid #16a34a' : isCredit ? '1px solid #fca5a5' : '1px solid #e2e8f0', backgroundColor: isSelected ? '#f0fdf4' : isCredit ? '#fff5f5' : '#ffffff' }}>
@@ -1673,6 +1772,9 @@ function AgentPortal() {
                                 <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>{bill.bill_number}</p>
                                 {isCredit && (
                                   <span style={{ fontSize: '10px', backgroundColor: '#fee2e2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', letterSpacing: '0.3px' }}>CREDIT</span>
+                                )}
+                                {isQueued && (
+                                  <span style={{ fontSize: '10px', backgroundColor: '#fef9c3', color: '#854d0e', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', letterSpacing: '0.3px' }}>⏳ QUEUED OFFLINE</span>
                                 )}
                               </div>
                               <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>

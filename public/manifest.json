@@ -2,7 +2,7 @@
   "name": "EasyTrack",
   "short_name": "EasyTrack",
   "description": "Field sales and distribution tracking",
-  "start_url": "/dashboard",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
