@@ -141,8 +141,8 @@ function OwnerDashboard() {
   const [deliveryForm, setDeliveryForm] = useState(null);
   const [logPaymentForm, setLogPaymentForm] = useState(null);
 
-  const [selectedShopLedger, setSelectedShopLedger] = useState(null);
-  const [shopLedgerHistory, setShopLedgerHistory] = useState([]);
+  const [selectedBillLedger, setSelectedBillLedger] = useState(null);
+  const [billPaymentHistory, setBillPaymentHistory] = useState([]);
 
   const [selectedPrintInvoice, setSelectedPrintInvoice] = useState(null);
   const [isReadyToPrint, setIsReadyToPrint] = useState(false);
@@ -664,13 +664,13 @@ function OwnerDashboard() {
     setIsLoading(false);
   }
 
-  async function loadShopStatement(shopId, shopName) {
+  async function loadBillPayments(order) {
     setIsLoading(true);
-    setSelectedShopLedger(shopName);
-    const { data } = await supabase.from('transactions')
-      .select('bill_number, bill_amount, amount_received, pending_amount, status, payment_mode, created_at, delivered_at')
-      .eq('shop_id', shopId).order('created_at', { ascending: true });
-    if (data) setShopLedgerHistory(data);
+    setSelectedBillLedger(order);
+    const { data } = await supabase.from('bill_payments')
+      .select('amount, payment_mode, paid_at')
+      .eq('transaction_id', order.id).order('paid_at', { ascending: true });
+    if (data) setBillPaymentHistory(data);
     setIsLoading(false);
   }
 
@@ -696,7 +696,7 @@ function OwnerDashboard() {
 
   useEffect(() => {
     setSelectedOrder(null);
-    setSelectedShopLedger(null);
+    setSelectedBillLedger(null);
     setSelectedAgentForOrder('');
     setDeliveryForm(null);
     loadPendingLeaveRequests();
@@ -1085,6 +1085,9 @@ function OwnerDashboard() {
         delivered_at: new Date().toISOString()
       }).eq('id', transactionId);
       if (error) throw error;
+      if (amountReceived > 0) {
+        await supabase.from('bill_payments').insert({ transaction_id: transactionId, amount: amountReceived, payment_mode: paymentMode });
+      }
       addToast('✅ Delivery settled!'); loadHistoryLedger();
     } catch (err) { alert('Failed.'); } finally { setIsUpdating(false); }
   };
@@ -1107,6 +1110,7 @@ function OwnerDashboard() {
         payment_mode: logPaymentForm.mode,
       }).eq('id', logPaymentForm.orderId);
       if (error) throw error;
+      await supabase.from('bill_payments').insert({ transaction_id: logPaymentForm.orderId, amount: amt, payment_mode: logPaymentForm.mode });
       addToast(`✅ ₹${amt.toLocaleString('en-IN')} logged — Pending: ₹${newPending.toLocaleString('en-IN')}`);
       setLogPaymentForm(null);
       loadHistoryLedger();
@@ -1393,8 +1397,8 @@ function OwnerDashboard() {
         <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 40 }} />
       )}
       {/* Mobile backdrop — drawers */}
-      {isMobile && ((selectedShopLedger && activeTab === 'history') || (selectedOrder && activeTab === 'pending')) && (
-        <div onClick={() => { setSelectedShopLedger(null); setSelectedOrder(null); }} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 198 }} />
+      {isMobile && ((selectedBillLedger && activeTab === 'history') || (selectedOrder && activeTab === 'pending')) && (
+        <div onClick={() => { setSelectedBillLedger(null); setSelectedOrder(null); }} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 198 }} />
       )}
 
       {/* Sidebar */}
@@ -1731,10 +1735,11 @@ function OwnerDashboard() {
                     }
                     return (
                       <tr key={order.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '16px', fontWeight: 'bold' }}>{order.bill_number}</td>
+                        <td style={{ padding: '16px', fontWeight: 'bold' }}>
+                          <button onClick={() => loadBillPayments(order)} style={{ background: 'none', border: 'none', padding: '0', color: '#2563eb', fontWeight: 'bold', fontSize: 'inherit', cursor: 'pointer', textDecoration: 'underline' }}>{order.bill_number}</button>
+                        </td>
                         <td style={{ padding: '16px' }}>
                           <span style={{ display: 'block', fontWeight: '500' }}>{order.shops?.name}</span>
-                          <button onClick={() => loadShopStatement(order.shops?.id, order.shops?.name)} style={{ background: 'none', border: 'none', color: '#2563eb', padding: '0', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}>📊 Statement</button>
                         </td>
                         <td style={{ padding: '16px', fontWeight: '600' }}>₹{parseFloat(order.bill_amount || 0).toLocaleString('en-IN')}</td>
                         <td style={{ padding: '16px', color: '#16a34a', fontWeight: '600' }}>
@@ -3763,32 +3768,38 @@ function OwnerDashboard() {
             </div>
           )}
 
-          {/* Statement Drawer */}
-          {selectedShopLedger && activeTab === 'history' && (
+          {/* Bill Payment History Drawer */}
+          {selectedBillLedger && activeTab === 'history' && (
             <div style={isMobile ? { position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 199, backgroundColor: '#ffffff', borderRadius: '16px 16px 0 0', padding: '24px 20px calc(80px + env(safe-area-inset-bottom))', maxHeight: '72vh', overflowY: 'auto', boxShadow: '0 -4px 24px rgba(0,0,0,0.15)' } : { width: '420px', backgroundColor: '#ffffff', borderRadius: '8px', border: '2px solid #2563eb', padding: '25px', boxSizing: 'border-box' }} className="no-print">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
-                <h3 style={{ margin: '0', fontSize: '16px', color: '#1e3a8a' }}>📜 {selectedShopLedger}</h3>
-                <button onClick={() => setSelectedShopLedger(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <h3 style={{ margin: '0', fontSize: '16px', color: '#1e3a8a' }}>💳 {selectedBillLedger.bill_number}</h3>
+                <button onClick={() => setSelectedBillLedger(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: isMobile ? undefined : '550px', overflowY: isMobile ? undefined : 'auto' }}>
-                {shopLedgerHistory.length === 0 ? <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center' }}>No records.</p> :
-                  shopLedgerHistory.map((ledger, idx) => (
-                    <div key={idx} style={{ padding: '12px', borderLeft: '4px solid #cbd5e1', backgroundColor: '#f8fafc', borderRadius: '0 6px 6px 0', fontSize: '13px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontWeight: 'bold' }}>
-                        <span>{ledger.bill_number}</span>
-                        <span style={{ color: '#64748b' }}>{new Date(ledger.created_at).toLocaleDateString('en-IN')}</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', color: '#475569' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Value:</span><strong>₹{ledger.bill_amount}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Paid:</span><strong style={{ color: '#16a34a' }}>₹{ledger.amount_received}</strong></div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #e2e8f0', paddingTop: '3px' }}>
-                          <span>Balance:</span><strong style={{ color: ledger.pending_amount > 0 ? '#dc2626' : '#16a34a' }}>₹{ledger.pending_amount}</strong>
-                        </div>
-                      </div>
+              <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b', borderBottom: '2px solid #e2e8f0', paddingBottom: '14px' }}>{selectedBillLedger.shops?.name}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: isMobile ? undefined : '450px', overflowY: isMobile ? undefined : 'auto', marginBottom: '16px' }}>
+                {billPaymentHistory.length === 0 ? (
+                  <p style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '10px 0' }}>
+                    {parseFloat(selectedBillLedger.amount_received || 0) > 0
+                      ? 'No itemized payments (this bill was paid before payment tracking was added).'
+                      : 'No payments logged yet for this bill.'}
+                  </p>
+                ) : billPaymentHistory.map((p, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderLeft: '4px solid #16a34a', backgroundColor: '#f0fdf4', borderRadius: '0 6px 6px 0', fontSize: '13px' }}>
+                    <div>
+                      <span style={{ fontWeight: 'bold', color: '#15803d' }}>₹{parseFloat(p.amount).toLocaleString('en-IN')}</span>
+                      <span style={{ marginLeft: '8px', color: '#64748b' }}>{p.payment_mode}</span>
                     </div>
-                  ))}
+                    <span style={{ color: '#64748b', fontSize: '12px' }}>{new Date(p.paid_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  </div>
+                ))}
               </div>
-              <button onClick={() => window.print()} style={{ width: '100%', marginTop: '16px', padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>🖨️ Print Statement</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingTop: '12px', borderTop: '1px dashed #e2e8f0', fontSize: '13px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Bill Value:</span><strong>₹{parseFloat(selectedBillLedger.bill_amount || 0).toLocaleString('en-IN')}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Total Paid:</span><strong style={{ color: '#16a34a' }}>₹{parseFloat(selectedBillLedger.amount_received || 0).toLocaleString('en-IN')}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Pending:</span><strong style={{ color: parseFloat(selectedBillLedger.pending_amount || 0) > 0 ? '#dc2626' : '#16a34a' }}>₹{parseFloat(selectedBillLedger.pending_amount || 0).toLocaleString('en-IN')}</strong>
+                </div>
+              </div>
             </div>
           )}
 

@@ -869,6 +869,9 @@ function AgentPortal() {
       }).eq('id', matchedOrder.id).select();
 
       if (error) { alert('Update failed: ' + error.message); return; }
+      if (newCashInput > 0) {
+        await supabase.from('bill_payments').insert({ transaction_id: matchedOrder.id, amount: newCashInput, payment_mode: paymentMode });
+      }
       addToast(`✅ Collected ₹${newCashInput.toLocaleString('en-IN')} — Remaining: ₹${finalRemainingPending.toLocaleString('en-IN')}`);
       setLastPayment({
         billNumber: matchedOrder.bill_number,
