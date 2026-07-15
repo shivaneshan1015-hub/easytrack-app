@@ -2158,22 +2158,32 @@ function AgentPortal() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {(() => {
-                    // Group consecutive dates with same reason+status into ranges
-                    const sorted = [...leaveHistory].sort((a, b) => a.leave_date.localeCompare(b.leave_date));
+                    // Bucket by reason+status first, then merge consecutive dates within each bucket —
+                    // stops an unrelated leave row on an in-between date from splitting one real
+                    // multi-day request into two ranges (mirrors owner-side dashboard grouping).
+                    const buckets = new Map();
+                    for (const leave of leaveHistory) {
+                      const key = `${leave.reason}||${leave.status || 'approved'}`;
+                      if (!buckets.has(key)) buckets.set(key, []);
+                      buckets.get(key).push(leave);
+                    }
                     const groups = [];
-                    for (const leave of sorted) {
-                      const prev = groups[groups.length - 1];
-                      const prevDate = prev ? new Date(prev.endDate) : null;
-                      const curDate = new Date(leave.leave_date);
-                      const isConsecutive = prevDate && (curDate - prevDate) === 86400000;
-                      if (prev && isConsecutive && prev.reason === leave.reason && prev.status === (leave.status || 'approved')) {
-                        prev.endDate = leave.leave_date;
-                        prev.days++;
-                      } else {
-                        groups.push({ startDate: leave.leave_date, endDate: leave.leave_date, reason: leave.reason, status: leave.status || 'approved', days: 1, id: leave.id });
+                    for (const bucket of buckets.values()) {
+                      const sortedBucket = [...bucket].sort((a, b) => a.leave_date.localeCompare(b.leave_date));
+                      let current = null;
+                      for (const leave of sortedBucket) {
+                        const isConsecutive = current && (new Date(leave.leave_date) - new Date(current.endDate)) === 86400000;
+                        if (current && isConsecutive) {
+                          current.endDate = leave.leave_date;
+                          current.days++;
+                        } else {
+                          current = { startDate: leave.leave_date, endDate: leave.leave_date, reason: leave.reason, status: leave.status || 'approved', days: 1, id: leave.id };
+                          groups.push(current);
+                        }
                       }
                     }
-                    return groups.reverse().map((group) => {
+                    groups.sort((a, b) => b.startDate.localeCompare(a.startDate));
+                    return groups.map((group) => {
                       const st = group.status;
                       const badgeBg = st === 'approved' ? '#dcfce7' : st === 'rejected' ? '#fee2e2' : '#fef9c3';
                       const badgeColor = st === 'approved' ? '#16a34a' : st === 'rejected' ? '#dc2626' : '#ca8a04';

@@ -1401,19 +1401,47 @@ function OwnerDashboard() {
       <aside style={{ width: '260px', backgroundColor: '#0f172a', padding: '25px', color: '#ffffff', display: 'flex', flexDirection: 'column', flexShrink: 0, ...(isMobile ? { position: 'fixed', top: 0, left: sidebarOpen ? 0 : '-280px', height: '100vh', zIndex: 50, transition: 'left 0.25s ease', overflowY: 'auto' } : {}) }} className="no-print">
         <h2 style={{ margin: '0 0 5px', fontSize: '22px', fontWeight: 'bold' }}>EasyTrack</h2>
         <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '20px' }}>HQ Control Room</span>
-        {pendingLeaveRequests.length > 0 && (
-          <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => { setActiveTab('settings'); setSettingsSubTab('team'); }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <span style={{ backgroundColor: '#7c3aed', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{pendingLeaveRequests.length}</span>
-              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c4b5fd' }}>Leave Requests</span>
-            </div>
-            {pendingLeaveRequests.slice(0, 3).map((leave, i) => (
-              <div key={i} style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
-                🏖️ {leave.agent_name} — {new Date(leave.leave_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+        {(() => {
+          // Group consecutive pending days for the same agent+reason into one range,
+          // so a single 4-day request shows as one line instead of four.
+          const buckets = new Map();
+          for (const leave of pendingLeaveRequests) {
+            const key = `${leave.agent_id}||${leave.reason}`;
+            if (!buckets.has(key)) buckets.set(key, []);
+            buckets.get(key).push(leave);
+          }
+          const groups = [];
+          for (const bucket of buckets.values()) {
+            const sortedBucket = [...bucket].sort((a, b) => a.leave_date.localeCompare(b.leave_date));
+            let current = null;
+            for (const leave of sortedBucket) {
+              const isConsecutive = current && (new Date(leave.leave_date) - new Date(current.endDate)) === 86400000;
+              if (current && isConsecutive) {
+                current.endDate = leave.leave_date;
+              } else {
+                current = { agent_name: leave.agent_name, startDate: leave.leave_date, endDate: leave.leave_date };
+                groups.push(current);
+              }
+            }
+          }
+          groups.sort((a, b) => a.startDate.localeCompare(b.startDate));
+          if (groups.length === 0) return null;
+          return (
+            <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => { setActiveTab('settings'); setSettingsSubTab('team'); }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ backgroundColor: '#7c3aed', color: '#fff', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', flexShrink: 0 }}>{groups.length}</span>
+                <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c4b5fd' }}>Leave Requests</span>
               </div>
-            ))}
-          </div>
-        )}
+              {groups.slice(0, 3).map((g, i) => (
+                <div key={i} style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+                  🏖️ {g.agent_name} — {g.startDate === g.endDate
+                    ? new Date(g.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                    : `${new Date(g.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(g.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
           <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>
           <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>
@@ -2715,24 +2743,33 @@ function OwnerDashboard() {
 
                     {/* 2. Leave Requests */}
                     {(() => {
-                      // Group consecutive dates with same agent+reason+status into ranges (mirrors agent-side Leave History grouping)
-                      const sorted = [...allLeaveRequests].sort((a, b) => a.agent_id === b.agent_id ? a.leave_date.localeCompare(b.leave_date) : (a.agent_name || '').localeCompare(b.agent_name || ''));
+                      // Bucket by agent+reason+status first, then merge consecutive dates within each bucket —
+                      // this stops an unrelated leave row that happens to land on an in-between date (different
+                      // reason/status) from splitting one real multi-day request into two groups.
+                      const buckets = new Map();
+                      for (const leave of allLeaveRequests) {
+                        const key = `${leave.agent_id}||${leave.reason}||${leave.status}`;
+                        if (!buckets.has(key)) buckets.set(key, []);
+                        buckets.get(key).push(leave);
+                      }
                       const groups = [];
-                      for (const leave of sorted) {
-                        const prev = groups[groups.length - 1];
-                        const prevDate = prev ? new Date(prev.endDate) : null;
-                        const curDate = new Date(leave.leave_date);
-                        const isConsecutive = prevDate && (curDate - prevDate) === 86400000;
-                        if (prev && isConsecutive && prev.agent_id === leave.agent_id && prev.reason === leave.reason && prev.status === leave.status) {
-                          prev.endDate = leave.leave_date;
-                          prev.days++;
-                          prev.ids.push(leave.id);
-                          prev.leaves.push(leave);
-                        } else {
-                          groups.push({ agent_id: leave.agent_id, agent_name: leave.agent_name, reason: leave.reason, status: leave.status, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id], leaves: [leave] });
+                      for (const bucket of buckets.values()) {
+                        const sortedBucket = [...bucket].sort((a, b) => a.leave_date.localeCompare(b.leave_date));
+                        let current = null;
+                        for (const leave of sortedBucket) {
+                          const isConsecutive = current && (new Date(leave.leave_date) - new Date(current.endDate)) === 86400000;
+                          if (current && isConsecutive) {
+                            current.endDate = leave.leave_date;
+                            current.days++;
+                            current.ids.push(leave.id);
+                            current.leaves.push(leave);
+                          } else {
+                            current = { agent_id: leave.agent_id, agent_name: leave.agent_name, reason: leave.reason, status: leave.status, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id], leaves: [leave] };
+                            groups.push(current);
+                          }
                         }
                       }
-                      groups.reverse();
+                      groups.sort((a, b) => b.startDate.localeCompare(a.startDate));
 
                       const agentNames = [...new Set(allLeaveRequests.map(l => l.agent_name))].sort();
                       const filteredGroups = groups.filter(g =>
