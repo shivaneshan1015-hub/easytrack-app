@@ -138,7 +138,6 @@ function OwnerDashboard() {
   const [isAddingShop, setIsAddingShop] = useState(false);
   const [capturingGpsFor, setCapturingGpsFor] = useState(null);
   const [deliveryForm, setDeliveryForm] = useState(null);
-  const [collectForm, setCollectForm] = useState(null);
   const [logPaymentForm, setLogPaymentForm] = useState(null);
 
   const [selectedShopLedger, setSelectedShopLedger] = useState(null);
@@ -699,7 +698,6 @@ function OwnerDashboard() {
     setSelectedShopLedger(null);
     setSelectedAgentForOrder('');
     setDeliveryForm(null);
-    setCollectForm(null);
     loadPendingLeaveRequests();
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); loadCreditAlerts(); }
     else if (activeTab === 'history') loadHistoryLedger();
@@ -1088,30 +1086,6 @@ function OwnerDashboard() {
       if (error) throw error;
       addToast('✅ Delivery settled!'); loadHistoryLedger();
     } catch (err) { alert('Failed.'); } finally { setIsUpdating(false); }
-  };
-
-  const handleCollectPayment = async () => {
-    const amt = parseFloat(collectForm.amount);
-    if (isNaN(amt) || amt <= 0) return alert('Enter a valid amount.');
-    const order = historyOrders.find(o => o.id === collectForm.orderId);
-    if (!order) return;
-    const maxPending = parseFloat(order.pending_amount);
-    if (amt > maxPending) return alert(`Cannot exceed outstanding amount ₹${maxPending.toLocaleString('en-IN')}`);
-    setIsUpdating(true);
-    try {
-      const newReceived = parseFloat(order.amount_received || 0) + amt;
-      const newPending = Math.max(0, parseFloat(order.bill_amount) - newReceived);
-      const { error } = await supabase.from('transactions').update({
-        amount_received: newReceived,
-        pending_amount: newPending,
-        payment_mode: collectForm.mode,
-      }).eq('id', collectForm.orderId);
-      if (error) throw error;
-      addToast(`✅ ₹${amt.toLocaleString('en-IN')} collected — Pending: ₹${newPending.toLocaleString('en-IN')}`);
-      setCollectForm(null);
-      loadHistoryLedger();
-    } catch (err) { alert('Failed: ' + err.message); }
-    finally { setIsUpdating(false); }
   };
 
   const handleLogPayment = async () => {
@@ -1751,7 +1725,9 @@ function OwnerDashboard() {
                         <td style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
-                            <button onClick={() => setLogPaymentForm({ orderId: order.id, amount: '', mode: 'Cash' })} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>💳 Log Payment</button>
+                            {order.status !== 'approved' && (
+                              <button onClick={() => setLogPaymentForm({ orderId: order.id, amount: '', mode: 'Cash' })} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>💳 Log Payment</button>
+                            )}
                           </div>
                           {logPaymentForm?.orderId === order.id && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', minWidth: '180px' }}>
@@ -1787,50 +1763,10 @@ function OwnerDashboard() {
                             </div>
                           )}
                           <button onClick={() => { setEmailModal({ orderId: order.id, billNumber: order.bill_number, shopName: order.shops?.name }); setEmailRecipient(''); }} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📧 Email</button>
-                          {order.status === 'delivered' && parseFloat(order.pending_amount) > 0 && (
-                            collectForm?.orderId === order.id ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', minWidth: '180px' }}>
-                                <div style={{ fontSize: '12px', color: '#166534', fontWeight: '600' }}>Collect — {order.bill_number}</div>
-                                <input
-                                  type="number" min="0.01" step="0.01"
-                                  placeholder={`Max ₹${parseFloat(order.pending_amount).toLocaleString('en-IN')}`}
-                                  value={collectForm.amount}
-                                  onChange={e => setCollectForm({ ...collectForm, amount: e.target.value })}
-                                  style={{ padding: '6px 8px', border: '1px solid #bbf7d0', borderRadius: '4px', fontSize: '13px' }}
-                                />
-                                <select
-                                  value={collectForm.mode}
-                                  onChange={e => setCollectForm({ ...collectForm, mode: e.target.value })}
-                                  style={{ padding: '6px 8px', border: '1px solid #bbf7d0', borderRadius: '4px', fontSize: '13px' }}>
-                                  <option value="Cash">💵 Cash</option>
-                                  <option value="UPI">📱 UPI</option>
-                                  <option value="Cheque">🏢 Cheque</option>
-                                </select>
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                  <button
-                                    onClick={handleCollectPayment}
-                                    disabled={isUpdating}
-                                    style={{ flex: 1, padding: '6px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
-                                    ✓ Confirm
-                                  </button>
-                                  <button
-                                    onClick={() => setCollectForm(null)}
-                                    style={{ padding: '6px 10px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
-                                    ✕
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <button
-                                  onClick={() => setCollectForm({ orderId: order.id, amount: '', mode: 'Cash' })}
-                                  style={{ padding: '6px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>
-                                  💰 Collect
-                                </button>
-                                {(() => { const link = waLink(order.shops?.phone_number, `Hi ${order.shops?.name}, a friendly reminder for your outstanding balance of ₹${parseFloat(order.pending_amount || 0).toLocaleString('en-IN')} on bill ${order.bill_number}. Please arrange payment at your convenience. – EasyTrack`); return link ? <a href={link} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 12px', backgroundColor: '#25d366', color: '#fff', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', textAlign: 'center' }}>📱 Remind</a> : null; })()}
-                              </div>
-                            )
-                          )}
+                          {order.status === 'delivered' && parseFloat(order.pending_amount) > 0 && (() => {
+                            const link = waLink(order.shops?.phone_number, `Hi ${order.shops?.name}, a friendly reminder for your outstanding balance of ₹${parseFloat(order.pending_amount || 0).toLocaleString('en-IN')} on bill ${order.bill_number}. Please arrange payment at your convenience. – EasyTrack`);
+                            return link ? <a href={link} target="_blank" rel="noopener noreferrer" style={{ padding: '6px 12px', backgroundColor: '#25d366', color: '#fff', textDecoration: 'none', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', textAlign: 'center' }}>📱 Remind</a> : null;
+                          })()}
                           {order.status === 'approved' && (
                             deliveryForm?.orderId === order.id ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', minWidth: '180px' }}>
