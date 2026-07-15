@@ -2161,6 +2161,7 @@ function OwnerDashboard() {
                               <th style={{ padding: '10px 12px', textAlign: 'left', color: '#475569' }}>Note</th>
                               <th style={{ padding: '10px 12px', textAlign: 'right', color: '#475569' }}>Amount</th>
                               <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Status</th>
+                              <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Receipt</th>
                               <th style={{ padding: '10px 12px', textAlign: 'center', color: '#475569' }}>Action</th>
                             </tr></thead>
                             <tbody>{filtered.map(exp => {
@@ -2177,6 +2178,14 @@ function OwnerDashboard() {
                                     <span style={{ padding: '3px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', backgroundColor: isApproved ? '#dcfce7' : isPending ? '#fef9c3' : '#fee2e2', color: isApproved ? '#16a34a' : isPending ? '#ca8a04' : '#dc2626' }}>
                                       {isApproved ? '✓ Approved' : isPending ? '⏳ Pending' : '✕ Rejected'}
                                     </span>
+                                  </td>
+                                  <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                                    {exp.receipt_url ? (
+                                      <a href={exp.receipt_url} target="_blank" rel="noopener noreferrer"
+                                        style={{ color: '#2563eb', fontSize: '12px', fontWeight: 'bold', textDecoration: 'underline' }}>📷 View</a>
+                                    ) : (
+                                      <span style={{ color: '#cbd5e1', fontSize: '12px' }}>—</span>
+                                    )}
                                   </td>
                                   <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                     {isPending && (
