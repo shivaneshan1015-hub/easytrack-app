@@ -1725,7 +1725,7 @@ function OwnerDashboard() {
                         <td style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button onClick={() => fetchAndPrintInvoice(order)} style={{ padding: '6px 12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>📥 Print Bill</button>
-                            {order.status !== 'approved' && (
+                            {order.status === 'delivered' && parseFloat(order.pending_amount) > 0 && (
                               <button onClick={() => setLogPaymentForm({ orderId: order.id, amount: '', mode: 'Cash' })} style={{ padding: '6px 12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px' }}>💳 Log Payment</button>
                             )}
                           </div>
