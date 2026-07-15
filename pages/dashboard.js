@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import dynamic from 'next/dynamic';
 import { useAuth, withAuth } from '../hooks/useAuth';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
@@ -116,6 +116,7 @@ function OwnerDashboard() {
   const [allLeaveRequests, setAllLeaveRequests] = useState([]);
   const [leaveAgentFilter, setLeaveAgentFilter] = useState('all');
   const [leaveStatusFilter, setLeaveStatusFilter] = useState('all');
+  const [expandedLeaveGroups, setExpandedLeaveGroups] = useState({});
   const [selectedAgentProfile, setSelectedAgentProfile] = useState(null);
   const [agentProfileData, setAgentProfileData] = useState(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -2726,8 +2727,9 @@ function OwnerDashboard() {
                           prev.endDate = leave.leave_date;
                           prev.days++;
                           prev.ids.push(leave.id);
+                          prev.leaves.push(leave);
                         } else {
-                          groups.push({ agent_id: leave.agent_id, agent_name: leave.agent_name, reason: leave.reason, status: leave.status, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id] });
+                          groups.push({ agent_id: leave.agent_id, agent_name: leave.agent_name, reason: leave.reason, status: leave.status, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id], leaves: [leave] });
                         }
                       }
                       groups.reverse();
@@ -2791,7 +2793,8 @@ function OwnerDashboard() {
                                     ? new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                                     : `${new Date(group.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${new Date(group.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
                                   return (
-                                    <tr key={group.ids[0]} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <Fragment key={group.ids[0]}>
+                                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
                                       <td style={{ padding: '10px 12px', color: '#0f172a' }}>
                                         {dateLabel}{!isSingle && <span style={{ marginLeft: '8px', fontSize: '12px', color: '#7c3aed', fontWeight: '600' }}>{group.days} days</span>}
                                       </td>
@@ -2804,11 +2807,19 @@ function OwnerDashboard() {
                                       </td>
                                       <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                                         {isPending && (
-                                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                                            <button onClick={() => handleLeaveAction(group, 'approved')}
-                                              style={{ padding: '5px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✓ Approve</button>
-                                            <button onClick={() => handleLeaveAction(group, 'rejected')}
-                                              style={{ padding: '5px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✕ Reject</button>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
+                                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                                              <button onClick={() => handleLeaveAction(group, 'approved')}
+                                                style={{ padding: '5px 12px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✓ Approve</button>
+                                              <button onClick={() => handleLeaveAction(group, 'rejected')}
+                                                style={{ padding: '5px 12px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>✕ Reject</button>
+                                            </div>
+                                            {group.days > 1 && (
+                                              <button onClick={() => setExpandedLeaveGroups(prev => ({ ...prev, [group.ids[0]]: !prev[group.ids[0]] }))}
+                                                style={{ padding: '2px 6px', background: 'none', border: 'none', color: '#7c3aed', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}>
+                                                {expandedLeaveGroups[group.ids[0]] ? '▴ Hide days' : '▾ Approve/reject individual days'}
+                                              </button>
+                                            )}
                                           </div>
                                         )}
                                         {!isPending && (
@@ -2817,6 +2828,26 @@ function OwnerDashboard() {
                                         )}
                                       </td>
                                     </tr>
+                                    {isPending && group.days > 1 && expandedLeaveGroups[group.ids[0]] && (
+                                      <tr style={{ backgroundColor: '#faf5ff', borderBottom: '1px solid #f1f5f9' }}>
+                                        <td colSpan={5} style={{ padding: '10px 12px 14px 28px' }}>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                            {group.leaves.map(leave => (
+                                              <div key={leave.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', fontSize: '12px', padding: '6px 10px', backgroundColor: '#fff', border: '1px solid #e9d5ff', borderRadius: '6px' }}>
+                                                <span style={{ color: '#0f172a' }}>{new Date(leave.leave_date).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                                                <div style={{ display: 'flex', gap: '6px' }}>
+                                                  <button onClick={() => handleLeaveAction({ agent_id: group.agent_id, agent_name: group.agent_name, reason: group.reason, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id] }, 'approved')}
+                                                    style={{ padding: '3px 10px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>✓ Approve</button>
+                                                  <button onClick={() => handleLeaveAction({ agent_id: group.agent_id, agent_name: group.agent_name, reason: group.reason, startDate: leave.leave_date, endDate: leave.leave_date, days: 1, ids: [leave.id] }, 'rejected')}
+                                                    style={{ padding: '3px 10px', backgroundColor: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '11px' }}>✕ Reject</button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                    </Fragment>
                                   );
                                 })}</tbody>
                               </table>
