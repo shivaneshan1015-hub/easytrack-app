@@ -27,6 +27,7 @@ function AgentPortal() {
   const [isCapturingShopGps, setIsCapturingShopGps] = useState(false);
   const [shopCreditInfo, setShopCreditInfo] = useState(null);
   const [shopLastOrder, setShopLastOrder] = useState(null);
+  const [shopPriceOverrides, setShopPriceOverrides] = useState({});
 
   // Phase 2
   const [shopSearchText, setShopSearchText] = useState('');
@@ -751,14 +752,17 @@ function AgentPortal() {
     setShopGpsStatus('');
     setShopCreditInfo(null);
     setShopLastOrder(null);
+    setShopPriceOverrides({});
+    setOrderItems([{ productId: '', quantity: 1 }]);
     if (!shopId) { setSelectedShopData(null); return; }
     const found = shops.find(s => s.id === shopId);
     setSelectedShopData(found || null);
     if (!found) return;
 
-    const [{ data: openTx }, { data: lastOrder }] = await Promise.all([
+    const [{ data: openTx }, { data: lastOrder }, { data: priceOverrides }] = await Promise.all([
       supabase.from('transactions').select('bill_amount').eq('shop_id', shopId).neq('status', 'delivered'),
       supabase.from('transactions').select('bill_amount, created_at').eq('shop_id', shopId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('shop_product_prices').select('product_id, price').eq('shop_id', shopId),
     ]);
     const creditLimit = parseFloat(found.credit_limit || 0);
     const creditUsed = (openTx || []).reduce((s, tx) => s + parseFloat(tx.bill_amount || 0), 0);
@@ -767,6 +771,7 @@ function AgentPortal() {
       const daysAgo = Math.floor((Date.now() - new Date(lastOrder.created_at).getTime()) / 86400000);
       setShopLastOrder({ daysAgo, amount: parseFloat(lastOrder.bill_amount || 0) });
     }
+    setShopPriceOverrides((priceOverrides || []).reduce((m, r) => { m[r.product_id] = parseFloat(r.price); return m; }, {}));
   };
 
   const captureShopGpsLocation = () => {
@@ -808,6 +813,24 @@ function AgentPortal() {
     setOrderItems(updatedItems);
   };
 
+  const selectProductForRow = (index, prodId) => {
+    const prod = productCatalog.find(p => p.id === prodId);
+    const price = shopPriceOverrides[prodId] ?? prod?.unit_price ?? 0;
+    const updatedItems = [...orderItems];
+    updatedItems[index] = { ...updatedItems[index], productId: prodId, price };
+    setOrderItems(updatedItems);
+  };
+
+  const handleRowPriceChange = (index, rawValue) => {
+    const item = orderItems[index];
+    const prod = productCatalog.find(p => p.id === item.productId);
+    const mrp = prod?.unit_price ?? Infinity;
+    let price = parseFloat(rawValue);
+    if (isNaN(price)) price = 0;
+    if (price > mrp) price = mrp;
+    handleItemChange(index, 'price', price);
+  };
+
   const addOrderItemRow = () => setOrderItems([...orderItems, { productId: '', quantity: 1 }]);
   const removeOrderItemRow = (index) => {
     if (orderItems.length > 1) setOrderItems(orderItems.filter((_, idx) => idx !== index));
@@ -831,7 +854,9 @@ function AgentPortal() {
       .select('id, quantity, product_id, total_price, products(id, name, unit_price)')
       .eq('transaction_id', bill.id);
     if (error || !items) return alert('Could not load bill items.');
-    setReturnItems(items.map(item => ({ ...item, returnQty: 0 })));
+    // Credit must reflect what this shop was actually charged on the bill, not today's live MRP
+    // (they can differ once a shop has a negotiated price, or if the MRP changed since the sale).
+    setReturnItems(items.map(item => ({ ...item, returnQty: 0, soldPrice: item.quantity > 0 ? item.total_price / item.quantity : 0 })));
     setReturnType('return');
     setReturnReason('');
     setReturnFormBill(bill);
@@ -843,7 +868,7 @@ function AgentPortal() {
     setIsSubmittingReturn(true);
     try {
       const totalCredit = toReturn.reduce(
-        (sum, item) => sum + parseFloat(item.products?.unit_price || 0) * item.returnQty, 0
+        (sum, item) => sum + parseFloat(item.soldPrice || 0) * item.returnQty, 0
       );
       const { data: ret, error: retErr } = await supabase
         .from('returns')
@@ -863,7 +888,7 @@ function AgentPortal() {
           product_id: item.product_id,
           product_name: item.products?.name || '',
           quantity: item.returnQty,
-          unit_price: parseFloat(item.products?.unit_price || 0)
+          unit_price: parseFloat(item.soldPrice || 0)
         }))
       );
       if (riErr) throw riErr;
@@ -980,6 +1005,13 @@ function AgentPortal() {
     e.preventDefault();
     if (!profile?.full_name) return alert('Your profile could not be loaded. Please refresh and try again.');
     if (orderItems.some(item => !item.productId)) return alert('Please select a product for every row.');
+    for (const item of orderItems) {
+      const prod = productCatalog.find(p => p.id === item.productId);
+      const price = item.price ?? prod?.unit_price ?? 0;
+      if (!(price > 0) || (prod && price > prod.unit_price)) {
+        return alert(`Invalid price for ${prod?.name || 'a product'} — must be greater than 0 and cannot exceed the MRP.`);
+      }
+    }
     setIsSubmitting(true);
     let targetShopId = selectedShop;
     try {
@@ -993,10 +1025,15 @@ function AgentPortal() {
       }
       if (!targetShopId) throw new Error('Please select a shop.');
       let cumulativeBillSum = 0;
+      const newPriceLocks = [];
       const formulatedItems = orderItems.map(item => {
         const prod = productCatalog.find(p => p.id === item.productId);
-        const rowSum = (prod ? prod.unit_price : 0) * item.quantity;
+        const price = item.price ?? prod?.unit_price ?? 0;
+        const rowSum = price * item.quantity;
         cumulativeBillSum += rowSum;
+        if (isNewShop || shopPriceOverrides[item.productId] === undefined) {
+          newPriceLocks.push({ product_id: item.productId, price });
+        }
         return { product_id: item.productId, quantity: item.quantity, total_price: rowSum };
       });
       // --- CREDIT LIMIT CHECK ---
@@ -1035,6 +1072,10 @@ function AgentPortal() {
         return;
       }
       await supabase.from('transaction_items').insert(formulatedItems.map(item => ({ transaction_id: txData.id, ...item })));
+      if (newPriceLocks.length > 0) {
+        await supabase.from('shop_product_prices')
+          .upsert(newPriceLocks.map(lock => ({ shop_id: targetShopId, product_id: lock.product_id, price: lock.price })), { onConflict: 'shop_id,product_id' });
+      }
       const shopName = isNewShop ? newShopName.trim() : (shops.find(s => s.id === targetShopId)?.name || '');
       setLastSubmittedOrder({
         billNumber,
@@ -1050,7 +1091,7 @@ function AgentPortal() {
       setNewShopName(''); setWhatsappNumber('');
       setGpsCoordinates({ lat: null, lng: null }); setGpsStatus('Not Anchored');
       setIsNewShop(false); setSelectedShop(''); setSelectedShopData(null); setShopGpsStatus('');
-      setShopCreditInfo(null); setShopLastOrder(null);
+      setShopCreditInfo(null); setShopLastOrder(null); setShopPriceOverrides({});
       generateFreshBillTag(); loadInitialData();
     } catch (err) { alert(err.message); }
     finally { setIsSubmitting(false); }
@@ -1060,7 +1101,7 @@ function AgentPortal() {
   const todayStr = new Date().toISOString().split('T')[0];
   const grandTotal = orderItems.reduce((sum, item) => {
     const prod = productCatalog.find(p => p.id === item.productId);
-    return sum + (prod ? prod.unit_price * item.quantity : 0);
+    return sum + (prod ? (item.price ?? prod.unit_price) * item.quantity : 0);
   }, 0);
 
   const nowDate = new Date();
@@ -1182,7 +1223,7 @@ function AgentPortal() {
             <div style={{ marginBottom: '25px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontWeight: 'bold' }}>Select Retailer Shop</label>
-                <button type="button" onClick={() => { setIsNewShop(!isNewShop); setSelectedShop(''); setSelectedShopData(null); setShopGpsStatus(''); setShopCreditInfo(null); setShopLastOrder(null); }}
+                <button type="button" onClick={() => { setIsNewShop(!isNewShop); setSelectedShop(''); setSelectedShopData(null); setShopGpsStatus(''); setShopCreditInfo(null); setShopLastOrder(null); setShopPriceOverrides({}); }}
                   style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px' }}>
                   {isNewShop ? '← Existing' : '➕ New Shop'}
                 </button>
@@ -1260,7 +1301,9 @@ function AgentPortal() {
                   ? productCatalog.filter(p => p.name.toLowerCase().includes(bookingProductSearch.trim().toLowerCase()))
                   : productCatalog;
                 const selectedProd = productCatalog.find(p => p.id === item.productId);
-                const rowTotal = selectedProd ? selectedProd.unit_price * item.quantity : 0;
+                const isLockedPrice = selectedProd && shopPriceOverrides[selectedProd.id] !== undefined;
+                const rowPrice = selectedProd ? (item.price ?? selectedProd.unit_price) : 0;
+                const rowTotal = selectedProd ? rowPrice * item.quantity : 0;
                 const maxQty = selectedProd ? Math.max(1, selectedProd.inventory_stock ?? Infinity) : Infinity;
                 return (
                   <div key={index} style={{ marginBottom: '10px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -1269,7 +1312,17 @@ function AgentPortal() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div>
                             <p style={{ margin: 0, fontWeight: 'bold', fontSize: '15px', color: '#0f172a' }}>{selectedProd.name}</p>
-                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>₹{selectedProd.unit_price.toLocaleString('en-IN')} · {selectedProd.inventory_stock ?? 0} in stock</p>
+                            {isLockedPrice ? (
+                              <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>🔒 ₹{rowPrice.toLocaleString('en-IN')} · shop rate · {selectedProd.inventory_stock ?? 0} in stock</p>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                                <span style={{ fontSize: '12px', color: '#64748b' }}>₹</span>
+                                <input type="number" min="0" max={selectedProd.unit_price} step="1" value={rowPrice}
+                                  onChange={(e) => handleRowPriceChange(index, e.target.value)}
+                                  style={{ width: '80px', padding: '4px 6px', border: '1.5px solid #cbd5e1', borderRadius: '5px', fontSize: '13px' }} />
+                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>/ MRP ₹{selectedProd.unit_price.toLocaleString('en-IN')} · {selectedProd.inventory_stock ?? 0} in stock</span>
+                              </div>
+                            )}
                           </div>
                           {orderItems.length > 1 && (
                             <button type="button" onClick={() => removeOrderItemRow(index)}
@@ -1290,10 +1343,12 @@ function AgentPortal() {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {filtered.slice(0, 8).map(prod => (
-                          <button type="button" key={prod.id} onClick={() => handleItemChange(index, 'productId', prod.id)}
+                          <button type="button" key={prod.id} onClick={() => selectProductForRow(index, prod.id)}
                             style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', textAlign: 'left' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#0f172a' }}>{prod.name}</span>
-                            <span style={{ fontSize: '12px', color: '#64748b' }}>₹{prod.unit_price.toLocaleString('en-IN')} · {prod.inventory_stock ?? 0} in stock</span>
+                            <span style={{ fontSize: '12px', color: '#64748b' }}>
+                              {shopPriceOverrides[prod.id] !== undefined ? `🔒 ₹${shopPriceOverrides[prod.id].toLocaleString('en-IN')}` : `₹${prod.unit_price.toLocaleString('en-IN')}`} · {prod.inventory_stock ?? 0} in stock
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -1845,7 +1900,7 @@ function AgentPortal() {
                             <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '6px', border: item.returnQty > 0 ? '1px solid #f97316' : '1px solid #e2e8f0' }}>
                               <div>
                                 <p style={{ margin: '0', fontSize: '14px', fontWeight: '500' }}>{item.products?.name}</p>
-                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Delivered: {item.quantity} · ₹{item.products?.unit_price} each</p>
+                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Delivered: {item.quantity} · ₹{item.soldPrice} each</p>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '12px', color: '#64748b' }}>Qty:</span>
@@ -1862,7 +1917,7 @@ function AgentPortal() {
                           {/* Credit preview */}
                           {returnItems.some(i => i.returnQty > 0) && (
                             <div style={{ padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '12px', border: '1px solid #fed7aa', fontSize: '13px' }}>
-                              Credit amount: <strong>₹{returnItems.reduce((sum, item) => sum + parseFloat(item.products?.unit_price || 0) * item.returnQty, 0).toLocaleString('en-IN')}</strong>
+                              Credit amount: <strong>₹{returnItems.reduce((sum, item) => sum + parseFloat(item.soldPrice || 0) * item.returnQty, 0).toLocaleString('en-IN')}</strong>
                             </div>
                           )}
 
@@ -2014,7 +2069,7 @@ function AgentPortal() {
                             <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '6px', border: item.returnQty > 0 ? '1px solid #f97316' : '1px solid #e2e8f0' }}>
                               <div>
                                 <p style={{ margin: '0', fontSize: '14px', fontWeight: '500' }}>{item.products?.name}</p>
-                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Delivered: {item.quantity} · ₹{item.products?.unit_price} each</p>
+                                <p style={{ margin: '0', fontSize: '12px', color: '#64748b' }}>Delivered: {item.quantity} · ₹{item.soldPrice} each</p>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '12px', color: '#64748b' }}>Qty:</span>
@@ -2026,7 +2081,7 @@ function AgentPortal() {
                           ))}
                           {returnItems.some(i => i.returnQty > 0) && (
                             <div style={{ padding: '10px 12px', backgroundColor: '#ffffff', borderRadius: '6px', marginBottom: '12px', border: '1px solid #fed7aa', fontSize: '13px' }}>
-                              Credit amount: <strong>₹{returnItems.reduce((sum, item) => sum + parseFloat(item.products?.unit_price || 0) * item.returnQty, 0).toLocaleString('en-IN')}</strong>
+                              Credit amount: <strong>₹{returnItems.reduce((sum, item) => sum + parseFloat(item.soldPrice || 0) * item.returnQty, 0).toLocaleString('en-IN')}</strong>
                             </div>
                           )}
                           <input type="text" placeholder="Reason (e.g. shop rejected, expired, damaged in transit)" value={returnReason}

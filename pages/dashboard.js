@@ -96,6 +96,7 @@ const InteractiveRouteMap = dynamic(() => import('../components/RouteMap'), {
 
 function OwnerDashboard() {
   const { supabase, profile, signOut } = useAuth();
+  const isOwner = profile?.role === 'owner';
   const [activeTab, setActiveTab] = useState('pending');
 
   const [pendingOrders, setPendingOrders] = useState([]);
@@ -112,6 +113,12 @@ function OwnerDashboard() {
   const [inviteMessage, setInviteMessage] = useState('');
   const [agentsList, setAgentsList] = useState([]);
   const [isDeletingAgent, setIsDeletingAgent] = useState(null);
+  const [newDispatcherName, setNewDispatcherName] = useState('');
+  const [newDispatcherEmail, setNewDispatcherEmail] = useState('');
+  const [isAddingDispatcher, setIsAddingDispatcher] = useState(false);
+  const [dispatcherInviteMessage, setDispatcherInviteMessage] = useState('');
+  const [dispatchersList, setDispatchersList] = useState([]);
+  const [isDeletingDispatcher, setIsDeletingDispatcher] = useState(null);
   const [pendingLeaveRequests, setPendingLeaveRequests] = useState([]);
   const [allLeaveRequests, setAllLeaveRequests] = useState([]);
   const [leaveAgentFilter, setLeaveAgentFilter] = useState('all');
@@ -169,6 +176,9 @@ function OwnerDashboard() {
   const [selectedShopFilter, setSelectedShopFilter] = useState('all');
   const [shopDirSearch, setShopDirSearch] = useState('');
   const [shopsViewMode, setShopsViewMode] = useState('list');
+  const [pricingShopId, setPricingShopId] = useState('');
+  const [shopPricingRows, setShopPricingRows] = useState([]);
+  const [savingShopPriceFor, setSavingShopPriceFor] = useState(null);
   const [settingsSubTab, setSettingsSubTab] = useState('team');
   const [ledgerSearch, setLedgerSearch] = useState('');
   const [ledgerStatusFilter, setLedgerStatusFilter] = useState('all');
@@ -226,6 +236,7 @@ function OwnerDashboard() {
   }, []);
 
   const handleNavClick = (tab) => {
+    if (!isOwner && (tab === 'finance' || tab === 'settings')) return;
     setActiveTab(tab);
     if (isMobile) setSidebarOpen(false);
   };
@@ -419,6 +430,47 @@ function OwnerDashboard() {
     setIsLoading(false);
   }
 
+  async function loadShopPrices(shopId) {
+    setPricingShopId(shopId);
+    if (!shopId) { setShopPricingRows([]); return; }
+    const { data: overrides } = await supabase.from('shop_product_prices').select('id, product_id, price').eq('shop_id', shopId);
+    const overrideMap = (overrides || []).reduce((m, o) => { m[o.product_id] = o; return m; }, {});
+    const rows = productsCatalog
+      .filter(p => p.is_active)
+      .map(p => ({
+        productId: p.id,
+        name: p.name,
+        mrp: p.unit_price,
+        overrideId: overrideMap[p.id]?.id || null,
+        price: overrideMap[p.id] ? parseFloat(overrideMap[p.id].price) : p.unit_price,
+      }));
+    setShopPricingRows(rows);
+  }
+
+  async function saveShopPrice(row) {
+    if (!pricingShopId) return;
+    const price = parseFloat(row.price);
+    if (!(price > 0)) return alert('Enter a price greater than 0.');
+    setSavingShopPriceFor(row.productId);
+    const { error } = await supabase.from('shop_product_prices')
+      .upsert([{ shop_id: pricingShopId, product_id: row.productId, price }], { onConflict: 'shop_id,product_id' });
+    setSavingShopPriceFor(null);
+    if (error) return alert('Save failed: ' + error.message);
+    addToast(`✅ Price saved for ${row.name}`);
+    loadShopPrices(pricingShopId);
+  }
+
+  async function resetShopPriceToMrp(row) {
+    if (!pricingShopId || !row.overrideId) return;
+    if (!window.confirm(`Reset "${row.name}" back to MRP for this shop?`)) return;
+    setSavingShopPriceFor(row.productId);
+    const { error } = await supabase.from('shop_product_prices').delete().eq('id', row.overrideId);
+    setSavingShopPriceFor(null);
+    if (error) return alert('Reset failed: ' + error.message);
+    addToast(`✅ Reset to MRP`);
+    loadShopPrices(pricingShopId);
+  }
+
   useEffect(() => {
     const stockChannel = supabase
       .channel('product-stock-watch')
@@ -474,13 +526,14 @@ function OwnerDashboard() {
   }
 
 
-  async function loadAgentsList() {
+  async function loadAgentsList(role = 'agent') {
     const { data } = await supabase
       .from("profiles")
       .select("id, full_name, email, role, created_at")
-      .eq("role", "agent")
+      .eq("role", role)
       .order("full_name", { ascending: true });
     if (!data) return;
+    if (role !== 'agent') { setDispatchersList(data); return; }
     // Get bill counts for each agent
     const agentsWithCounts = await Promise.all(data.map(async (agent) => {
       const { count } = await supabase
@@ -554,9 +607,10 @@ function OwnerDashboard() {
     if (!window.confirm(`Remove agent "${agent.full_name}"? They will lose login access but all their past bills will be preserved.`)) return;
     setIsDeletingAgent(agent.id);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/delete-agent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
         body: JSON.stringify({ userId: agent.id })
       });
       const data = await res.json();
@@ -569,6 +623,28 @@ function OwnerDashboard() {
       setIsDeletingAgent(null);
     }
   }
+
+  async function handleDeleteDispatcher(dispatcher) {
+    if (!window.confirm(`Remove dispatcher "${dispatcher.full_name}"? They will lose login access.`)) return;
+    setIsDeletingDispatcher(dispatcher.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/delete-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ userId: dispatcher.id })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      addToast(`✅ Dispatcher "${dispatcher.full_name}" removed.`);
+      loadAgentsList('dispatcher');
+    } catch (err) {
+      alert("Failed to remove dispatcher: " + err.message);
+    } finally {
+      setIsDeletingDispatcher(null);
+    }
+  }
+
   async function loadReturns() {
     const { data } = await supabase
       .from('returns')
@@ -703,9 +779,9 @@ function OwnerDashboard() {
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); loadCreditAlerts(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
-    else if (activeTab === 'shops') { loadShops(); loadRouteMapLocations(); loadActiveAgentsList(); }
+    else if (activeTab === 'shops') { loadShops(); loadRouteMapLocations(); loadActiveAgentsList(); if (isOwner) loadMasterProducts(); }
     else if (activeTab === 'routes') { loadBeatPlan(); loadShops(); loadActiveAgentsList(); loadRouteMapLocations(); }
-    else if (activeTab === 'settings') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList(); loadAllLeaveRequests(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); loadInvoiceSettings(); }
+    else if (activeTab === 'settings') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList('agent'); loadAgentsList('dispatcher'); loadAllLeaveRequests(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); loadInvoiceSettings(); }
   }, [activeTab]);
 
   const handleSaveInvoiceSettings = async () => {
@@ -760,9 +836,10 @@ function OwnerDashboard() {
     if (!newAgentName.trim() || !newAgentEmail.trim()) return alert('Please enter both name and email.');
     setIsAddingAgent(true); setInviteMessage('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/invite-agent', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: newAgentEmail.trim(), full_name: newAgentName.trim() })
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ email: newAgentEmail.trim(), full_name: newAgentName.trim(), role: 'agent' })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -770,6 +847,24 @@ function OwnerDashboard() {
       setNewAgentName(''); setNewAgentEmail('');
     } catch (err) { setInviteMessage(`❌ Error: ${err.message}`); }
     finally { setIsAddingAgent(false); }
+  };
+
+  const handleInviteDispatcher = async () => {
+    if (!newDispatcherName.trim() || !newDispatcherEmail.trim()) return alert('Please enter both name and email.');
+    setIsAddingDispatcher(true); setDispatcherInviteMessage('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/invite-agent', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ email: newDispatcherEmail.trim(), full_name: newDispatcherName.trim(), role: 'dispatcher' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setDispatcherInviteMessage(`✅ Invitation sent to ${newDispatcherEmail}`);
+      setNewDispatcherName(''); setNewDispatcherEmail('');
+      loadAgentsList('dispatcher');
+    } catch (err) { setDispatcherInviteMessage(`❌ Error: ${err.message}`); }
+    finally { setIsAddingDispatcher(false); }
   };
 
   const handleReviewClick = async (order) => {
@@ -789,6 +884,9 @@ function OwnerDashboard() {
           .single();
         return {
           ...item,
+          // Preserve whatever this line was actually sold at (MRP or a negotiated shop rate) —
+          // must NOT be re-derived from products.unit_price, which can drift from the sale price.
+          unit_price_used: item.quantity > 0 ? item.total_price / item.quantity : (item.products?.unit_price || 0),
           products: {
             ...item.products,
             inventory_stock: liveProduct ? liveProduct.inventory_stock : 0
@@ -799,20 +897,29 @@ function OwnerDashboard() {
     }
   };
 
-  const handleAddProductToOrder = (productId) => {
+  const handleAddProductToOrder = async (productId) => {
     if (!productId) return;
     const prod = allActiveProducts.find(p => p.id === productId);
     if (!prod) return;
     // Check if already in order
     const existing = orderItems.find(item => item.products?.id === productId);
     if (existing) return alert(`${prod.name} is already in this order. Update the quantity instead.`);
+    // Respect a locked shop price if one exists for this product, else fall back to MRP
+    let unitPrice = prod.unit_price;
+    const shopId = selectedOrder?.shops?.id;
+    if (shopId) {
+      const { data: override } = await supabase.from('shop_product_prices')
+        .select('price').eq('shop_id', shopId).eq('product_id', productId).maybeSingle();
+      if (override) unitPrice = parseFloat(override.price);
+    }
     // Add as new item (no id means it will be inserted)
     setOrderItems([...orderItems, {
       id: null,
       isNew: true,
       product_id: productId,
       quantity: 1,
-      total_price: prod.unit_price,
+      total_price: unitPrice,
+      unit_price_used: unitPrice,
       products: { id: productId, name: prod.name, unit_price: prod.unit_price, inventory_stock: prod.inventory_stock }
     }]);
   };
@@ -820,7 +927,7 @@ function OwnerDashboard() {
   const handleQuantityEdit = (index, newQty) => {
     const updated = [...orderItems];
     updated[index].quantity = parseInt(newQty) || 0;
-    updated[index].total_price = (updated[index].products?.unit_price || 0) * updated[index].quantity;
+    updated[index].total_price = (updated[index].unit_price_used ?? updated[index].products?.unit_price ?? 0) * updated[index].quantity;
     setOrderItems(updated);
   };
 
@@ -830,7 +937,7 @@ function OwnerDashboard() {
     try {
       let total = 0;
       for (const item of orderItems) {
-        const lineTotal = (item.products?.unit_price || 0) * item.quantity;
+        const lineTotal = (item.unit_price_used ?? item.products?.unit_price ?? 0) * item.quantity;
         total += lineTotal;
         if (item.isNew) {
           // Insert new item
@@ -851,7 +958,10 @@ function OwnerDashboard() {
       const { data } = await supabase.from('transaction_items')
         .select(`id, quantity, total_price, products ( id, name, unit_price, inventory_stock )`)
         .eq('transaction_id', selectedOrder.id);
-      if (data) setOrderItems(data);
+      if (data) setOrderItems(data.map(item => ({
+        ...item,
+        unit_price_used: item.quantity > 0 ? item.total_price / item.quantity : (item.products?.unit_price || 0),
+      })));
     } catch (err) { console.error(err); } finally { setIsUpdating(false); }
   };
 
@@ -982,6 +1092,24 @@ function OwnerDashboard() {
 
     const label = dateRange === 'today' ? 'Today' : dateRange === 'week' ? 'ThisWeek' : dateRange === 'month' ? 'ThisMonth' : 'Custom';
     XLSX.writeFile(wb, `EasyTrack_Finance_${label}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
+  function exportPendingBillsExcel() {
+    const rows = (financials.shopPendingBills || [])
+      .filter(b => selectedShopFilter === 'all' || b.shopName === selectedShopFilter)
+      .map(b => ({
+        'Bill No': b.billNumber,
+        'Shop': b.shopName,
+        'Date': b.date,
+        'Bill Amount (INR)': parseFloat(b.total || 0),
+        'Pending (INR)': parseFloat(b.pending || 0),
+      }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [16, 22, 14, 18, 14].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pending Bills');
+    const shopLabel = selectedShopFilter === 'all' ? 'AllShops' : selectedShopFilter.replace(/[^a-z0-9]+/gi, '_');
+    XLSX.writeFile(wb, `EasyTrack_PendingBills_${shopLabel}_${new Date().toISOString().split('T')[0]}.xlsx`);
   }
 
   function exportLedgerPdf() {
@@ -1429,7 +1557,7 @@ function OwnerDashboard() {
             }
           }
           groups.sort((a, b) => a.startDate.localeCompare(b.startDate));
-          if (groups.length === 0) return null;
+          if (!isOwner || groups.length === 0) return null;
           return (
             <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => { setActiveTab('settings'); setSettingsSubTab('team'); }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -1449,11 +1577,11 @@ function OwnerDashboard() {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
           <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>
           <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>
-          <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>
+          {isOwner && <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>}
           <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shops</div>
           <div onClick={() => handleNavClick('routes')} style={tabStyle('routes')}>🗺️ Routes</div>
         </nav>
-        <div onClick={() => handleNavClick('settings')} style={{ ...tabStyle('settings'), marginTop: '8px' }}>⚙️ Settings</div>
+        {isOwner && <div onClick={() => handleNavClick('settings')} style={{ ...tabStyle('settings'), marginTop: '8px' }}>⚙️ Settings</div>}
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: '20px', marginTop: '20px' }}>
           <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 'bold', color: '#f8fafc' }}>{profile?.full_name || 'Owner'}</p>
           <p style={{ margin: '0 0 14px', fontSize: '11px', color: '#64748b' }}>{profile?.email}</p>
@@ -1957,13 +2085,19 @@ function OwnerDashboard() {
                 <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
                     <h3 style={{ margin: '0', fontSize: '15px', fontWeight: 'bold' }}>Shop Pending Bills</h3>
-                    <select value={selectedShopFilter} onChange={e => setSelectedShopFilter(e.target.value)}
-                      style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', backgroundColor: '#ffffff', minWidth: '200px' }}>
-                      <option value="all">All Shops</option>
-                      {financials.shopPendingBills && [...new Set(financials.shopPendingBills.map(b => b.shopName))].map(name => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      <select value={selectedShopFilter} onChange={e => setSelectedShopFilter(e.target.value)}
+                        style={{ padding: '8px 14px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', backgroundColor: '#ffffff', minWidth: '200px' }}>
+                        <option value="all">All Shops</option>
+                        {financials.shopPendingBills && [...new Set(financials.shopPendingBills.map(b => b.shopName))].map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                      <button onClick={exportPendingBillsExcel}
+                        style={{ padding: '8px 14px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+                        ⬇ Download Excel
+                      </button>
+                    </div>
                   </div>
                   {financials.shopPendingBills && financials.shopPendingBills.length > 0 ? (
                     <div style={{ overflowX: 'auto' }}>
@@ -2286,6 +2420,7 @@ function OwnerDashboard() {
                     {[
                       { key: 'list', label: 'List View' },
                       { key: 'map', label: 'Map View' },
+                      ...(isOwner ? [{ key: 'pricing', label: '💰 Pricing' }] : []),
                     ].map(v => (
                       <button key={v.key} onClick={() => setShopsViewMode(v.key)}
                         style={{
@@ -2444,6 +2579,58 @@ function OwnerDashboard() {
                       </div>
                       {shopsList.length === 0 && <p style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No shops yet.</p>}
                     </div>
+                  </div>
+                ) : shopsViewMode === 'pricing' && isOwner ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Shop Pricing</h3>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Prices agents negotiate in the field lock in automatically. Edit or reset them here.</p>
+                      <select value={pricingShopId} onChange={(e) => loadShopPrices(e.target.value)}
+                        style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', minWidth: '260px' }}>
+                        <option value="">-- Select a shop --</option>
+                        {[...shopsList].sort((a, b) => a.name.localeCompare(b.name)).map(shop => (
+                          <option key={shop.id} value={shop.id}>{shop.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {pricingShopId && (
+                      <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                        <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
+                          <h3 style={{ margin: 0, fontSize: '16px' }}>Products ({shopPricingRows.length})</h3>
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                              <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Product</th>
+                              <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>MRP (₹)</th>
+                              <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Shop Price (₹)</th>
+                              <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Actions</th>
+                            </tr></thead>
+                            <tbody>{shopPricingRows.map((row) => (
+                              <tr key={row.productId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '14px 16px', fontWeight: '500' }}>{row.name}</td>
+                                <td style={{ padding: '14px 16px', color: '#64748b' }}>₹{row.mrp.toLocaleString('en-IN')}</td>
+                                <td style={{ padding: '14px 16px' }}>
+                                  <input type="number" min="0" max={row.mrp} step="1" value={row.price}
+                                    onChange={(e) => setShopPricingRows(shopPricingRows.map(r => r.productId === row.productId ? { ...r, price: parseFloat(e.target.value) || 0 } : r))}
+                                    style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '5px', fontSize: '13px', width: '110px' }} />
+                                  {row.overrideId && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#7c3aed', fontWeight: 'bold' }}>🔒 locked</span>}
+                                </td>
+                                <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
+                                  <button onClick={() => saveShopPrice(row)} disabled={savingShopPriceFor === row.productId}
+                                    style={{ padding: '6px 12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Save</button>
+                                  {row.overrideId && (
+                                    <button onClick={() => resetShopPriceToMrp(row)} disabled={savingShopPriceFor === row.productId}
+                                      style={{ padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>Reset to MRP</button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                          {shopPricingRows.length === 0 && <p style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No active products.</p>}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
@@ -2752,6 +2939,23 @@ function OwnerDashboard() {
                           {isAddingAgent ? 'Sending...' : '✉️ Send Invitation'}
                         </button>
                         {inviteMessage && <p style={{ margin: '0', fontSize: '13px', color: inviteMessage.includes('✅') ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{inviteMessage}</p>}
+                      </div>
+                    </div>
+
+                    {/* 1b. Invite Dispatcher */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Invite Dispatcher</h3>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>A dispatcher can approve &amp; release orders, view Dispatch/Shops/Routes, but cannot see Financial Insights or Settings.</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '500px' }}>
+                        <input type="text" placeholder="Dispatcher Full Name" value={newDispatcherName} onChange={(e) => setNewDispatcherName(e.target.value)}
+                          style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
+                        <input type="email" placeholder="Dispatcher Email" value={newDispatcherEmail} onChange={(e) => setNewDispatcherEmail(e.target.value)}
+                          style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
+                        <button onClick={handleInviteDispatcher} disabled={isAddingDispatcher}
+                          style={{ padding: '12px 24px', backgroundColor: '#7c3aed', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: isAddingDispatcher ? 0.7 : 1 }}>
+                          {isAddingDispatcher ? 'Sending...' : '✉️ Send Invitation'}
+                        </button>
+                        {dispatcherInviteMessage && <p style={{ margin: '0', fontSize: '13px', color: dispatcherInviteMessage.includes('✅') ? '#16a34a' : '#dc2626', fontWeight: '500' }}>{dispatcherInviteMessage}</p>}
                       </div>
                     </div>
 
@@ -3177,6 +3381,40 @@ function OwnerDashboard() {
                                   disabled={isDeletingAgent === agent.id}
                                   style={{ padding: '8px 14px', backgroundColor: isDeletingAgent === agent.id ? '#e2e8f0' : '#fee2e2', color: isDeletingAgent === agent.id ? '#94a3b8' : '#dc2626', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
                                 >{isDeletingAgent === agent.id ? 'Removing...' : '🗑 Remove Agent'}</button>
+                              </td>
+                            </tr>
+                          ))}</tbody>
+                        </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2b. Dispatchers List */}
+                    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Dispatchers</h3>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Removing a dispatcher revokes login access.</p>
+                      {dispatchersList.length === 0 ? (
+                        <p style={{ color: '#64748b', fontSize: '14px' }}>No dispatchers found.</p>
+                      ) : (
+                        <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', minWidth: '460px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                          <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Email</th>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Joined</th>
+                            <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Action</th>
+                          </tr></thead>
+                          <tbody>{dispatchersList.map((dispatcher) => (
+                            <tr key={dispatcher.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '14px 16px', fontWeight: 'bold', fontSize: '14px' }}>{dispatcher.full_name}</td>
+                              <td style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{dispatcher.email}</td>
+                              <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(dispatcher.created_at).toLocaleDateString('en-IN')}</td>
+                              <td style={{ padding: '14px 16px' }}>
+                                <button
+                                  onClick={() => handleDeleteDispatcher(dispatcher)}
+                                  disabled={isDeletingDispatcher === dispatcher.id}
+                                  style={{ padding: '8px 14px', backgroundColor: isDeletingDispatcher === dispatcher.id ? '#e2e8f0' : '#fee2e2', color: isDeletingDispatcher === dispatcher.id ? '#94a3b8' : '#dc2626', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                                >{isDeletingDispatcher === dispatcher.id ? 'Removing...' : '🗑 Remove Dispatcher'}</button>
                               </td>
                             </tr>
                           ))}</tbody>
@@ -3856,7 +4094,7 @@ function OwnerDashboard() {
               })}
               <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '2px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                 <span style={{ fontWeight: 'bold', color: '#475569' }}>Total:</span>
-                <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#16a34a' }}>₹{orderItems.reduce((acc, curr) => acc + ((curr.products?.unit_price || 0) * curr.quantity), 0).toLocaleString('en-IN')}</span>
+                <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#16a34a' }}>₹{orderItems.reduce((acc, curr) => acc + ((curr.unit_price_used ?? curr.products?.unit_price ?? 0) * curr.quantity), 0).toLocaleString('en-IN')}</span>
               </div>
               {orderItems.some(item => (item.products?.inventory_stock || 0) === 0) && (
                 <div style={{ padding: '10px', backgroundColor: '#fff5f5', border: '1px solid #fecaca', borderRadius: '6px', marginBottom: '12px', fontSize: '12px', color: '#991b1b' }}>
@@ -3949,7 +4187,7 @@ function OwnerDashboard() {
                   <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '12px 10px', color: '#64748b' }}>{idx + 1}</td>
                     <td style={{ padding: '12px 10px', fontWeight: '600' }}>{line.products?.name}</td>
-                    <td style={{ padding: '12px 10px', textAlign: 'right', color: '#475569' }}>{(line.products?.unit_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                    <td style={{ padding: '12px 10px', textAlign: 'right', color: '#475569' }}>{(line.quantity > 0 ? line.total_price / line.quantity : (line.products?.unit_price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                     <td style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 'bold' }}>{line.quantity} boxes</td>
                     <td style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 'bold' }}>{parseFloat(line.total_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                   </tr>
@@ -4000,7 +4238,7 @@ function OwnerDashboard() {
             { tab: 'finance',  icon: '📊', label: 'Finance'  },
             { tab: 'shops',    icon: '🏪', label: 'Shops'    },
             { tab: 'settings', icon: '⚙️', label: 'Settings' },
-          ].map(({ tab, icon, label }) => {
+          ].filter(({ tab }) => isOwner || (tab !== 'finance' && tab !== 'settings')).map(({ tab, icon, label }) => {
             const isActive = activeTab === tab;
             return (
               <button key={tab} onClick={() => handleNavClick(tab)} style={{ flex: 1, minHeight: '48px', boxSizing: 'border-box', padding: '6px 2px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', cursor: 'pointer', color: isActive ? '#38bdf8' : '#64748b', borderTop: `2px solid ${isActive ? '#38bdf8' : 'transparent'}`, transition: 'color 0.15s' }}>
@@ -4037,4 +4275,4 @@ function OwnerDashboard() {
   );
 }
 
-export default withAuth(OwnerDashboard, ['owner']);
+export default withAuth(OwnerDashboard, ['owner', 'dispatcher']);
