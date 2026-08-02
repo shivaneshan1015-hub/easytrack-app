@@ -6,7 +6,14 @@ import { startSyncEngine, isNetworkError } from '../lib/syncEngine';
 
 function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('booking');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === 'undefined') return 'booking';
+    return sessionStorage.getItem('et_agent_active_tab') || 'booking';
+  });
+
+  useEffect(() => {
+    try { sessionStorage.setItem('et_agent_active_tab', activeTab); } catch (_) {}
+  }, [activeTab]);
 
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [billNumber, setBillNumber] = useState('');

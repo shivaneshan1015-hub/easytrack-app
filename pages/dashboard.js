@@ -97,7 +97,10 @@ const InteractiveRouteMap = dynamic(() => import('../components/RouteMap'), {
 function OwnerDashboard() {
   const { supabase, profile, signOut } = useAuth();
   const isOwner = profile?.role === 'owner';
-  const [activeTab, setActiveTab] = useState('pending');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === 'undefined') return 'pending';
+    return sessionStorage.getItem('et_dashboard_active_tab') || 'pending';
+  });
 
   const [pendingOrders, setPendingOrders] = useState([]);
   const [historyOrders, setHistoryOrders] = useState([]);
@@ -771,6 +774,7 @@ function OwnerDashboard() {
   }, [isReadyToPrint, selectedPrintInvoice]);
 
   useEffect(() => {
+    try { sessionStorage.setItem('et_dashboard_active_tab', activeTab); } catch (_) {}
     setSelectedOrder(null);
     setSelectedBillLedger(null);
     setSelectedAgentForOrder('');
