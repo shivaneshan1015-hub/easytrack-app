@@ -30,10 +30,10 @@ if (!password) {
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 const client = new Client({
-  host: 'db.drfmdjmdtjhgayjeshvq.supabase.co',
+  host: 'aws-1-ap-south-1.pooler.supabase.com',
   port: 5432,
   database: 'postgres',
-  user: 'postgres',
+  user: 'postgres.drfmdjmdtjhgayjeshvq',
   password,
   ssl: { rejectUnauthorized: false },
 });
