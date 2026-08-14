@@ -13,8 +13,13 @@ export default async function handler(req, res) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { email, full_name, role } = req.body;
+  const { email, full_name, role, permissions } = req.body;
   const inviteRole = role === 'dispatcher' ? 'dispatcher' : 'agent';
+
+  const KNOWN_PERMISSIONS = ['today', 'dispatch', 'finance', 'shops', 'shops_pricing', 'routes', 'settings'];
+  const invitePermissions = inviteRole === 'dispatcher' && Array.isArray(permissions)
+    ? permissions.filter(p => KNOWN_PERMISSIONS.includes(p))
+    : [];
 
   if (!email || !full_name) {
     return res.status(400).json({ error: 'Email and full name are required' });
@@ -57,7 +62,8 @@ export default async function handler(req, res) {
         id: data.user.id,
         full_name: full_name,
         email: email,
-        role: inviteRole
+        role: inviteRole,
+        permissions: invitePermissions
       }]);
 
     if (profileError) throw profileError;

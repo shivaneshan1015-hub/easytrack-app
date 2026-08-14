@@ -97,6 +97,17 @@ const InteractiveRouteMap = dynamic(() => import('../components/RouteMap'), {
 function OwnerDashboard() {
   const { supabase, profile, signOut } = useAuth();
   const isOwner = profile?.role === 'owner';
+  const can = (perm) => isOwner || (profile?.permissions || []).includes(perm);
+  const TAB_PERMISSION = { pending: 'today', history: 'dispatch', finance: 'finance', shops: 'shops', routes: 'routes', settings: 'settings' };
+  const PERMISSION_OPTIONS = [
+    { key: 'today', label: '🏠 Today' },
+    { key: 'dispatch', label: '📜 Dispatch' },
+    { key: 'finance', label: '📈 Financial Insights' },
+    { key: 'shops', label: '🏪 Shops' },
+    { key: 'shops_pricing', label: '💰 Shop Pricing' },
+    { key: 'routes', label: '🗺️ Routes' },
+    { key: 'settings', label: '⚙️ Settings' },
+  ];
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === 'undefined') return 'pending';
     return sessionStorage.getItem('et_dashboard_active_tab') || 'pending';
@@ -122,6 +133,10 @@ function OwnerDashboard() {
   const [dispatcherInviteMessage, setDispatcherInviteMessage] = useState('');
   const [dispatchersList, setDispatchersList] = useState([]);
   const [isDeletingDispatcher, setIsDeletingDispatcher] = useState(null);
+  const [newDispatcherPermissions, setNewDispatcherPermissions] = useState([]);
+  const [editingPermissionsFor, setEditingPermissionsFor] = useState(null);
+  const [editPermissionsDraft, setEditPermissionsDraft] = useState([]);
+  const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [pendingLeaveRequests, setPendingLeaveRequests] = useState([]);
   const [allLeaveRequests, setAllLeaveRequests] = useState([]);
   const [leaveAgentFilter, setLeaveAgentFilter] = useState('all');
@@ -239,7 +254,7 @@ function OwnerDashboard() {
   }, []);
 
   const handleNavClick = (tab) => {
-    if (!isOwner && (tab === 'finance' || tab === 'settings')) return;
+    if (!can(TAB_PERMISSION[tab] || tab)) return;
     setActiveTab(tab);
     if (isMobile) setSidebarOpen(false);
   };
@@ -532,7 +547,7 @@ function OwnerDashboard() {
   async function loadAgentsList(role = 'agent') {
     const { data } = await supabase
       .from("profiles")
-      .select("id, full_name, email, role, created_at")
+      .select("id, full_name, email, role, permissions, created_at")
       .eq("role", role)
       .order("full_name", { ascending: true });
     if (!data) return;
@@ -783,7 +798,7 @@ function OwnerDashboard() {
     if (activeTab === 'pending') { loadPendingOrders(); loadActiveAgentsList(); loadDailyBriefing(); loadCreditAlerts(); }
     else if (activeTab === 'history') loadHistoryLedger();
     else if (activeTab === 'finance') { calculateFinancialMetrics(dateRange); loadReturns(); loadAgentTargets(); loadExpenses(); }
-    else if (activeTab === 'shops') { loadShops(); loadRouteMapLocations(); loadActiveAgentsList(); if (isOwner) loadMasterProducts(); }
+    else if (activeTab === 'shops') { loadShops(); loadRouteMapLocations(); loadActiveAgentsList(); if (can('shops')) loadMasterProducts(); }
     else if (activeTab === 'routes') { loadBeatPlan(); loadShops(); loadActiveAgentsList(); loadRouteMapLocations(); }
     else if (activeTab === 'settings') { loadMasterProducts(); loadActiveAgentsList(); loadAgentsList('agent'); loadAgentsList('dispatcher'); loadAllLeaveRequests(); loadAgentTargets(); loadAgentPerformance(); loadShopVisits(); loadAttendance(attendanceDate); loadInvoiceSettings(); }
   }, [activeTab]);
@@ -860,15 +875,32 @@ function OwnerDashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/invite-agent', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ email: newDispatcherEmail.trim(), full_name: newDispatcherName.trim(), role: 'dispatcher' })
+        body: JSON.stringify({ email: newDispatcherEmail.trim(), full_name: newDispatcherName.trim(), role: 'dispatcher', permissions: newDispatcherPermissions })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setDispatcherInviteMessage(`✅ Invitation sent to ${newDispatcherEmail}`);
-      setNewDispatcherName(''); setNewDispatcherEmail('');
+      setNewDispatcherName(''); setNewDispatcherEmail(''); setNewDispatcherPermissions([]);
       loadAgentsList('dispatcher');
     } catch (err) { setDispatcherInviteMessage(`❌ Error: ${err.message}`); }
     finally { setIsAddingDispatcher(false); }
+  };
+
+  const handleUpdatePermissions = async (dispatcherId) => {
+    setIsSavingPermissions(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/update-permissions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ userId: dispatcherId, permissions: editPermissionsDraft })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      addToast('✅ Access updated');
+      setEditingPermissionsFor(null);
+      loadAgentsList('dispatcher');
+    } catch (err) { alert('Failed to update access: ' + err.message); }
+    finally { setIsSavingPermissions(false); }
   };
 
   const handleReviewClick = async (order) => {
@@ -1561,7 +1593,7 @@ function OwnerDashboard() {
             }
           }
           groups.sort((a, b) => a.startDate.localeCompare(b.startDate));
-          if (!isOwner || groups.length === 0) return null;
+          if (!can('settings') || groups.length === 0) return null;
           return (
             <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', padding: '12px', marginBottom: '20px', border: '1px solid #7c3aed' }} onClick={() => { setActiveTab('settings'); setSettingsSubTab('team'); }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -1579,13 +1611,13 @@ function OwnerDashboard() {
           );
         })()}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
-          <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>
-          <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>
-          {isOwner && <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>}
-          <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shops</div>
-          <div onClick={() => handleNavClick('routes')} style={tabStyle('routes')}>🗺️ Routes</div>
+          {can('today') && <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>}
+          {can('dispatch') && <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>}
+          {can('finance') && <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>}
+          {can('shops') && <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shops</div>}
+          {can('routes') && <div onClick={() => handleNavClick('routes')} style={tabStyle('routes')}>🗺️ Routes</div>}
         </nav>
-        {isOwner && <div onClick={() => handleNavClick('settings')} style={{ ...tabStyle('settings'), marginTop: '8px' }}>⚙️ Settings</div>}
+        {can('settings') && <div onClick={() => handleNavClick('settings')} style={{ ...tabStyle('settings'), marginTop: '8px' }}>⚙️ Settings</div>}
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: '20px', marginTop: '20px' }}>
           <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 'bold', color: '#f8fafc' }}>{profile?.full_name || 'Owner'}</p>
           <p style={{ margin: '0 0 14px', fontSize: '11px', color: '#64748b' }}>{profile?.email}</p>
@@ -2424,7 +2456,7 @@ function OwnerDashboard() {
                     {[
                       { key: 'list', label: 'List View' },
                       { key: 'map', label: 'Map View' },
-                      ...(isOwner ? [{ key: 'pricing', label: '💰 Pricing' }] : []),
+                      ...(can('shops_pricing') ? [{ key: 'pricing', label: '💰 Pricing' }] : []),
                     ].map(v => (
                       <button key={v.key} onClick={() => setShopsViewMode(v.key)}
                         style={{
@@ -2584,7 +2616,7 @@ function OwnerDashboard() {
                       {shopsList.length === 0 && <p style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No shops yet.</p>}
                     </div>
                   </div>
-                ) : shopsViewMode === 'pricing' && isOwner ? (
+                ) : shopsViewMode === 'pricing' && can('shops_pricing') ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
                     <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                       <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Shop Pricing</h3>
@@ -2949,12 +2981,24 @@ function OwnerDashboard() {
                     {/* 1b. Invite Dispatcher */}
                     <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
                       <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Invite Dispatcher</h3>
-                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>A dispatcher can approve &amp; release orders, view Dispatch/Shops/Routes, but cannot see Financial Insights or Settings.</p>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: '#64748b' }}>Pick exactly what this dispatcher can access below — you can change it anytime after inviting them.</p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '500px' }}>
                         <input type="text" placeholder="Dispatcher Full Name" value={newDispatcherName} onChange={(e) => setNewDispatcherName(e.target.value)}
                           style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
                         <input type="email" placeholder="Dispatcher Email" value={newDispatcherEmail} onChange={(e) => setNewDispatcherEmail(e.target.value)}
                           style={{ padding: '12px', border: '2px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
+                        <div>
+                          <p style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: 'bold', color: '#475569' }}>Access</p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                            {PERMISSION_OPTIONS.map(opt => (
+                              <label key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={newDispatcherPermissions.includes(opt.key)}
+                                  onChange={(e) => setNewDispatcherPermissions(prev => e.target.checked ? [...prev, opt.key] : prev.filter(p => p !== opt.key))} />
+                                {opt.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
                         <button onClick={handleInviteDispatcher} disabled={isAddingDispatcher}
                           style={{ padding: '12px 24px', backgroundColor: '#7c3aed', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: isAddingDispatcher ? 0.7 : 1 }}>
                           {isAddingDispatcher ? 'Sending...' : '✉️ Send Invitation'}
@@ -3409,11 +3453,16 @@ function OwnerDashboard() {
                             <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Action</th>
                           </tr></thead>
                           <tbody>{dispatchersList.map((dispatcher) => (
-                            <tr key={dispatcher.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <Fragment key={dispatcher.id}>
+                            <tr style={{ borderBottom: editingPermissionsFor === dispatcher.id ? 'none' : '1px solid #f1f5f9' }}>
                               <td style={{ padding: '14px 16px', fontWeight: 'bold', fontSize: '14px' }}>{dispatcher.full_name}</td>
                               <td style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{dispatcher.email}</td>
                               <td style={{ padding: '14px 16px', fontSize: '13px', color: '#64748b' }}>{new Date(dispatcher.created_at).toLocaleDateString('en-IN')}</td>
-                              <td style={{ padding: '14px 16px' }}>
+                              <td style={{ padding: '14px 16px', display: 'flex', gap: '8px' }}>
+                                <button
+                                  onClick={() => { setEditingPermissionsFor(dispatcher.id); setEditPermissionsDraft(dispatcher.permissions || []); }}
+                                  style={{ padding: '8px 14px', backgroundColor: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                                >Edit Access</button>
                                 <button
                                   onClick={() => handleDeleteDispatcher(dispatcher)}
                                   disabled={isDeletingDispatcher === dispatcher.id}
@@ -3421,6 +3470,30 @@ function OwnerDashboard() {
                                 >{isDeletingDispatcher === dispatcher.id ? 'Removing...' : '🗑 Remove Dispatcher'}</button>
                               </td>
                             </tr>
+                            {editingPermissionsFor === dispatcher.id && (
+                              <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td colSpan={4} style={{ padding: '4px 16px 18px', backgroundColor: '#f8fafc' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '10px' }}>
+                                    {PERMISSION_OPTIONS.map(opt => (
+                                      <label key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                                        <input type="checkbox" checked={editPermissionsDraft.includes(opt.key)}
+                                          onChange={(e) => setEditPermissionsDraft(prev => e.target.checked ? [...prev, opt.key] : prev.filter(p => p !== opt.key))} />
+                                        {opt.label}
+                                      </label>
+                                    ))}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button onClick={() => handleUpdatePermissions(dispatcher.id)} disabled={isSavingPermissions}
+                                      style={{ padding: '8px 16px', backgroundColor: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px', opacity: isSavingPermissions ? 0.7 : 1 }}
+                                    >{isSavingPermissions ? 'Saving...' : 'Save'}</button>
+                                    <button onClick={() => setEditingPermissionsFor(null)} disabled={isSavingPermissions}
+                                      style={{ padding: '8px 16px', backgroundColor: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                                    >Cancel</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
                           ))}</tbody>
                         </table>
                         </div>
@@ -4242,7 +4315,7 @@ function OwnerDashboard() {
             { tab: 'finance',  icon: '📊', label: 'Finance'  },
             { tab: 'shops',    icon: '🏪', label: 'Shops'    },
             { tab: 'settings', icon: '⚙️', label: 'Settings' },
-          ].filter(({ tab }) => isOwner || (tab !== 'finance' && tab !== 'settings')).map(({ tab, icon, label }) => {
+          ].filter(({ tab }) => can(TAB_PERMISSION[tab] || tab)).map(({ tab, icon, label }) => {
             const isActive = activeTab === tab;
             return (
               <button key={tab} onClick={() => handleNavClick(tab)} style={{ flex: 1, minHeight: '48px', boxSizing: 'border-box', padding: '6px 2px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px', cursor: 'pointer', color: isActive ? '#38bdf8' : '#64748b', borderTop: `2px solid ${isActive ? '#38bdf8' : 'transparent'}`, transition: 'color 0.15s' }}>

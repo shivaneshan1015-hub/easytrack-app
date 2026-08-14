@@ -1,10 +1,15 @@
 // Test script for agent_expenses table
-// Usage: node scripts/test-agent-expenses.js
+// Usage: SUPABASE_SERVICE_ROLE_KEY="..." node scripts/test-agent-expenses.js
+// Key found at: Supabase Dashboard -> Project Settings -> API -> service_role key
 
 const https = require('https');
 
 const SUPABASE_URL = 'https://drfmdjmdtjhgayjeshvq.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRyZm1kam1kdGpoZ2F5amVzaHZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDE1OTgzMCwiZXhwIjoyMDk1NzM1ODMwfQ.l-LFydWINyxQJzAW2iOlnZaA19Riv8y-rqod1Eab72A';
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SERVICE_KEY) {
+  console.error('Usage: SUPABASE_SERVICE_ROLE_KEY="..." node scripts/test-agent-expenses.js');
+  process.exit(1);
+}
 
 function req(method, path, body) {
   return new Promise((resolve, reject) => {
