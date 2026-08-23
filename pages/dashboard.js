@@ -3,6 +3,11 @@ import dynamic from 'next/dynamic';
 import { useAuth, withAuth } from '../hooks/useAuth';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import * as XLSX from 'xlsx';
+import Logo from '../components/Logo';
+import Badge from '../components/ui/Badge';
+import Card from '../components/ui/Card';
+import StatWidget from '../components/ui/StatWidget';
+import OfflineSyncWidget from '../components/ui/OfflineSyncWidget';
 
 // Custom tooltip for charts
 const ChartTooltip = ({ active, payload, label }) => {
@@ -1567,8 +1572,10 @@ function OwnerDashboard() {
 
       {/* Sidebar */}
       <aside style={{ width: '260px', backgroundColor: '#0f172a', padding: '25px', color: '#ffffff', display: 'flex', flexDirection: 'column', flexShrink: 0, ...(isMobile ? { position: 'fixed', top: 0, left: sidebarOpen ? 0 : '-280px', height: '100vh', zIndex: 50, transition: 'left 0.25s ease', overflowY: 'auto' } : {}) }} className="no-print">
-        <h2 style={{ margin: '0 0 5px', fontSize: '22px', fontWeight: 'bold' }}>EasyTrack</h2>
-        <span style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '20px' }}>HQ Control Room</span>
+        <div style={{ marginBottom: '24px' }}>
+          <Logo variant="dark" size={36} showTagline={true} />
+          <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginTop: '6px', fontWeight: 600, letterSpacing: '0.04em' }}>HQ CONTROL ROOM</span>
+        </div>
         {(() => {
           // Group consecutive pending days for the same agent+reason into one range,
           // so a single 4-day request shows as one line instead of four.
@@ -4326,6 +4333,9 @@ function OwnerDashboard() {
           })}
         </nav>
       )}
+
+      {/* Floating Network & Sync Indicator */}
+      <OfflineSyncWidget supabase={supabase} />
 
       <style jsx global>{`
         @media print {

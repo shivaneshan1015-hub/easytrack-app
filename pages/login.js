@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 
+import Logo from '../components/Logo';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -124,9 +126,8 @@ export default function LoginPage() {
         {/* Left panel */}
         <div style={styles.brandPanel} className="et-brand">
           <div style={styles.brandInner}>
-            <div style={styles.logo}>
-              <span style={styles.logoMark}>ET</span>
-              <span style={styles.logoText}>EasyTrack</span>
+            <div style={{ marginBottom: 36 }}>
+              <Logo variant="dark" size={44} showTagline={true} />
             </div>
             <h1 style={styles.tagline}>
               Distribution<br />

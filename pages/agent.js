@@ -3,6 +3,8 @@ import { useAuth, withAuth } from '../hooks/useAuth';
 import { checkCreditAvailable } from '../lib/credit';
 import { setCachedOpenBills, getCachedOpenBills, enqueueDeliveryAction, subscribeOutbox } from '../lib/offlineStore';
 import { startSyncEngine, isNetworkError } from '../lib/syncEngine';
+import Logo from '../components/Logo';
+import OfflineSyncWidget from '../components/ui/OfflineSyncWidget';
 
 function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
@@ -2442,6 +2444,9 @@ function AgentPortal() {
           ))}
         </div>
       )}
+
+      {/* Floating Offline & Sync Indicator */}
+      <OfflineSyncWidget supabase={supabase} />
 
       {/* Mobile bottom nav */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '2px solid #f1f5f9', display: 'flex', zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)' }}>
