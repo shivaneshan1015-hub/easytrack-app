@@ -166,6 +166,22 @@ function SuperAdminDashboard() {
     }
     setIsProvisioning(true);
     try {
+      const res = await fetch('/api/invite-client-owner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: newCompanyName.trim(),
+          owner_name: newOwnerName.trim() || 'Owner',
+          owner_email: newOwnerEmail.trim(),
+          plan_tier: newPlanTier,
+          max_agents: parseInt(newMaxAgents) || 5,
+          trial_days: 7
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to provision client');
+
       const newOrg = {
         id: crypto.randomUUID(),
         company_name: newCompanyName.trim(),
@@ -179,19 +195,14 @@ function SuperAdminDashboard() {
         features: customFeatures
       };
 
-      const { error: orgError } = await supabase.from('organizations').insert([newOrg]);
-      if (orgError && orgError.code !== '42P01') {
-        console.warn('Could not insert org into DB:', orgError.message);
-      }
-
       setOrganizations(prev => [newOrg, ...prev]);
       setShowAddModal(false);
       setNewCompanyName('');
       setNewOwnerName('');
       setNewOwnerEmail('');
-      showToast(`🎉 Provisioned ${newOrg.company_name}! 7-Day Trial Activated.`);
+      showToast(data.message || `🎉 Provisioned ${newOrg.company_name}! Email invitation sent to ${newOrg.owner_email}.`);
     } catch (err) {
-      alert('Failed: ' + err.message);
+      alert('Provisioning failed: ' + err.message);
     } finally {
       setIsProvisioning(false);
     }
