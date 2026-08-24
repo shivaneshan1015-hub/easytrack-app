@@ -1,56 +1,35 @@
-import React, { useState } from 'react';
+import React from 'react';
 
 /**
  * Official Easy Track Logo Component.
- * Uses the official user-provided high-resolution horizontal logo graphics (/logo-light.png & /logo-dark.png).
+ * Pixel-perfect SVG vector rendering that seamlessly integrates across light and dark themes
+ * with zero background box artifacts or image pixelation.
  *
  * @param {Object} props
  * @param {'light' | 'dark'} [props.variant='light'] - 'light' for light backgrounds, 'dark' for dark backgrounds
  * @param {number} [props.height=44] - Display height in pixels
+ * @param {boolean} [props.showTagline=true] - Whether to display "Track. Manage. Grow."
  * @param {string} [props.className='']
  * @param {Object} [props.style={}]
  */
 export default function Logo({
   variant = 'light',
   height = 44,
+  showTagline = true,
   className = '',
   style = {}
 }) {
-  const [imgError, setImgError] = useState(false);
   const isDark = variant === 'dark';
-  const logoSrc = isDark ? '/logo-dark.png' : '/logo-light.png';
 
-  if (!imgError) {
-    return (
-      <div
-        className={`easy-track-logo ${className}`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          userSelect: 'none',
-          ...style
-        }}
-      >
-        <img
-          src={logoSrc}
-          alt="Easy Track — Track. Manage. Grow."
-          style={{
-            height: `${height}px`,
-            width: 'auto',
-            objectFit: 'contain',
-            display: 'block'
-          }}
-          onError={() => setImgError(true)}
-        />
-      </div>
-    );
-  }
+  // Exact Brand Colors
+  const textColor = isDark ? '#ffffff' : '#0F172A';    // "Easy" Navy/White
+  const greenColor = isDark ? '#22c55e' : '#16a34a';   // "Track" Delivery Green
+  const taglineColor = isDark ? '#94a3b8' : '#475569'; // Tagline Slate
+  const truckOutline = isDark ? '#ffffff' : '#0F172A';
 
-  // Fallback SVG rendering if PNG image fails to load
-  const textColor = isDark ? '#ffffff' : '#0F172A';
-  const greenColor = isDark ? '#22c55e' : '#16a34a';
-  const taglineColor = isDark ? '#94a3b8' : '#475569';
-  const strokeColor = isDark ? '#ffffff' : '#0F172A';
+  const scale = height / 44;
+  const truckWidth = Math.round(52 * scale);
+  const truckHeight = Math.round(height);
 
   return (
     <div
@@ -58,35 +37,96 @@ export default function Logo({
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '10px',
+        gap: `${Math.max(8, Math.round(12 * scale))}px`,
         userSelect: 'none',
         ...style
       }}
     >
+      {/* 🚚 Crisp Vector Truck Icon */}
       <svg
-        width={Math.round(height * 1.5)}
-        height={height}
-        viewBox="0 0 140 90"
+        width={truckWidth}
+        height={truckHeight}
+        viewBox="0 0 140 85"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
+        style={{ flexShrink: 0 }}
       >
-        <path d="M10 20H45" stroke={greenColor} strokeWidth="8" strokeLinecap="round" />
-        <path d="M4 35H38" stroke={greenColor} strokeWidth="8" strokeLinecap="round" />
-        <path d="M16 50H32" stroke={greenColor} strokeWidth="8" strokeLinecap="round" />
-        <path d="M52 16H98C103.5 16 108 20.5 108 26V58H46V22C46 18.7 48.7 16 52 16Z" fill="none" stroke={strokeColor} strokeWidth="7" />
-        <path d="M108 30H124C128.4 30 132 33.6 132 38L136 50C137 53 137 58 137 58H108V30Z" fill="none" stroke={strokeColor} strokeWidth="7" />
-        <path d="M4 72C40 64 100 64 136 72" stroke={greenColor} strokeWidth="6" strokeLinecap="round" />
-        <circle cx="62" cy="60" r="11" fill={textColor} stroke={strokeColor} strokeWidth="3" />
-        <circle cx="118" cy="60" r="11" fill={textColor} stroke={strokeColor} strokeWidth="3" />
+        {/* Speed Lines (Green) */}
+        <path d="M12 18H48" stroke={greenColor} strokeWidth="7" strokeLinecap="round" />
+        <path d="M4 33H40" stroke={greenColor} strokeWidth="7" strokeLinecap="round" />
+        <path d="M16 48H32" stroke={greenColor} strokeWidth="7" strokeLinecap="round" />
+
+        {/* Truck Cargo Body */}
+        <path
+          d="M52 14H98C103.5 14 108 18.5 108 24V54H46V20C46 16.7 48.7 14 52 14Z"
+          fill="none"
+          stroke={truckOutline}
+          strokeWidth="6.5"
+        />
+
+        {/* Truck Cab */}
+        <path
+          d="M108 26H124C128.4 26 132 29.6 132 34L136 46C137 49 137 54 137 54H108V26Z"
+          fill="none"
+          stroke={truckOutline}
+          strokeWidth="6.5"
+        />
+
+        {/* Cab Window */}
+        <path
+          d="M114 31H122C124 31 125 32 126 34L128 41H114V31Z"
+          fill={truckOutline}
+        />
+
+        {/* Ground Arch (Green) */}
+        <path
+          d="M4 68C40 60 100 60 136 68"
+          stroke={greenColor}
+          strokeWidth="5.5"
+          strokeLinecap="round"
+        />
+
+        {/* Wheels */}
+        <circle cx="62" cy="56" r="10" fill={textColor} stroke={truckOutline} strokeWidth="3" />
+        <circle cx="62" cy="56" r="3.5" fill={isDark ? '#0f172a' : '#ffffff'} />
+
+        <circle cx="118" cy="56" r="10" fill={textColor} stroke={truckOutline} strokeWidth="3" />
+        <circle cx="118" cy="56" r="3.5" fill={isDark ? '#0f172a' : '#ffffff'} />
       </svg>
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: `${Math.round(height * 0.5)}px`, display: 'flex', gap: '3px' }}>
+
+      {/* 🏷️ Typography & Tagline */}
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div
+          style={{
+            fontFamily: "'Georgia', 'Times New Roman', 'Syne', serif",
+            fontWeight: 700,
+            fontSize: `${Math.round(24 * scale)}px`,
+            lineHeight: 1.05,
+            letterSpacing: '-0.01em',
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: '4px'
+          }}
+        >
           <span style={{ color: textColor }}>Easy</span>
           <span style={{ color: greenColor }}>Track</span>
         </div>
-        <span style={{ fontFamily: "'DM Sans', sans-serif", fontSize: `${Math.max(9, Math.round(height * 0.22))}px`, color: taglineColor }}>
-          Track. Manage. Grow.
-        </span>
+
+        {showTagline && (
+          <span
+            style={{
+              fontFamily: "'DM Sans', 'Inter', system-ui, sans-serif",
+              fontSize: `${Math.max(9.5, Math.round(10.5 * scale))}px`,
+              fontWeight: 500,
+              color: taglineColor,
+              letterSpacing: '0.04em',
+              marginTop: '3px',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Track. Manage. Grow.
+          </span>
+        )}
       </div>
     </div>
   );

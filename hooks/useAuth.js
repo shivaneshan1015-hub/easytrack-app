@@ -94,6 +94,7 @@ export function withAuth(Component, allowedRoles = []) {
       if (allowedRoles.length > 0 && !allowedRoles.includes(profile?.role)) {
         // Role mismatch — send agent back to their portal
         if (profile?.role === 'agent') router.replace('/agent');
+        else if (profile?.role === 'super_admin') router.replace('/super-admin');
         else router.replace('/login');
       }
     }, [user, profile, loading, router]);
