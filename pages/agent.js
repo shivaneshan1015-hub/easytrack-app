@@ -5,6 +5,8 @@ import { setCachedOpenBills, getCachedOpenBills, enqueueDeliveryAction, subscrib
 import { startSyncEngine, isNetworkError } from '../lib/syncEngine';
 import Logo from '../components/Logo';
 import OfflineSyncWidget from '../components/ui/OfflineSyncWidget';
+import SignaturePad from '../components/ui/SignaturePad';
+import TouchStepper from '../components/ui/TouchStepper';
 
 function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
@@ -37,6 +39,33 @@ function AgentPortal() {
   const [shopCreditInfo, setShopCreditInfo] = useState(null);
   const [shopLastOrder, setShopLastOrder] = useState(null);
   const [shopPriceOverrides, setShopPriceOverrides] = useState({});
+
+  // Full-fledged field enhancements
+  const [bookingStep, setBookingStep] = useState(1); // 1 = Select Shop, 2 = Select Items, 3 = Review & Submit
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [podSignatureUrl, setPodSignatureUrl] = useState('');
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+
+  const startVoiceSearch = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return alert('Voice recognition is not supported in this browser.');
+    
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.onstart = () => setIsListeningVoice(true);
+      recognition.onend = () => setIsListeningVoice(false);
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setShopSearchText(transcript);
+      };
+      recognition.start();
+    } catch (e) {
+      console.error(e);
+      setIsListeningVoice(false);
+    }
+  };
 
   // Phase 2
   const [shopSearchText, setShopSearchText] = useState('');
@@ -2414,6 +2443,20 @@ function AgentPortal() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Proof of Delivery (POD) Signature Modal */}
+      {showSignatureModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 350, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <SignaturePad
+            onSave={(sigDataUrl) => {
+              setPodSignatureUrl(sigDataUrl);
+              setShowSignatureModal(false);
+              addToast('✅ POD Signature captured!');
+            }}
+            onCancel={() => setShowSignatureModal(false)}
+          />
         </div>
       )}
 

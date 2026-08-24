@@ -8,6 +8,7 @@ import Badge from '../components/ui/Badge';
 import Card from '../components/ui/Card';
 import StatWidget from '../components/ui/StatWidget';
 import OfflineSyncWidget from '../components/ui/OfflineSyncWidget';
+import StickyKpiBar from '../components/ui/StickyKpiBar';
 
 // Custom tooltip for charts
 const ChartTooltip = ({ active, payload, label }) => {
@@ -1632,8 +1633,16 @@ function OwnerDashboard() {
         </div>
       </aside>
 
-      {/* Main */}
-      <main style={{ flexGrow: 1, padding: isMobile ? '16px 16px calc(74px + env(safe-area-inset-bottom))' : '40px', boxSizing: 'border-box', minWidth: 0 }} className="no-print">
+      {/* Main Container with Sticky Top KPI Bar */}
+      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <StickyKpiBar
+          sales={financials.totalSales}
+          collected={financials.totalCollected}
+          outstanding={financials.totalOutstanding}
+          activeAgentsCount={activeAgents.length}
+        />
+
+        <main style={{ flexGrow: 1, padding: isMobile ? '16px 16px calc(74px + env(safe-area-inset-bottom))' : '40px', boxSizing: 'border-box', minWidth: 0 }} className="no-print">
         <header style={{ marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '12px' }}>
           {isMobile && (
             <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px 6px', color: '#1e293b', flexShrink: 0, lineHeight: 1 }}>☰</button>
@@ -4358,6 +4367,7 @@ function OwnerDashboard() {
           @page { margin: 1.6cm; size: A4; }
         }
       `}</style>
+      </div>
     </div>
   );
 }
