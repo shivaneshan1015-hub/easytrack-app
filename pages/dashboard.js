@@ -1573,7 +1573,7 @@ function OwnerDashboard() {
       {/* Sidebar */}
       <aside style={{ width: '260px', backgroundColor: '#0f172a', padding: '25px', color: '#ffffff', display: 'flex', flexDirection: 'column', flexShrink: 0, ...(isMobile ? { position: 'fixed', top: 0, left: sidebarOpen ? 0 : '-280px', height: '100vh', zIndex: 50, transition: 'left 0.25s ease', overflowY: 'auto' } : {}) }} className="no-print">
         <div style={{ marginBottom: '24px' }}>
-          <Logo variant="dark" size={36} showTagline={true} />
+          <Logo variant="dark" height={42} />
           <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginTop: '6px', fontWeight: 600, letterSpacing: '0.04em' }}>HQ CONTROL ROOM</span>
         </div>
         {(() => {

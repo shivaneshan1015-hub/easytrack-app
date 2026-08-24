@@ -127,7 +127,7 @@ export default function LoginPage() {
         <div style={styles.brandPanel} className="et-brand">
           <div style={styles.brandInner}>
             <div style={{ marginBottom: 36 }}>
-              <Logo variant="dark" size={44} showTagline={true} />
+              <Logo variant="dark" height={56} />
             </div>
             <h1 style={styles.tagline}>
               Distribution<br />
