@@ -4,6 +4,8 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 
 import Logo from '../components/Logo';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import { useLanguage } from '../lib/i18n';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -154,17 +156,20 @@ export default function LoginPage() {
         <div style={styles.formPanel} className="et-form-panel">
           <div style={styles.formCard}>
 
-            <div style={styles.formHeader}>
-              <h2 style={styles.formTitle}>
-                {mode === 'login' && 'Welcome back'}
-                {mode === 'register' && 'Create account'}
-                {mode === 'forgot' && 'Reset password'}
-              </h2>
-              <p style={styles.formSubtitle}>
-                {mode === 'login' && 'Sign in to your distributor account'}
-                {mode === 'register' && 'Set up your EasyTrack workspace'}
-                {mode === 'forgot' && 'We will send a reset link to your email'}
-              </p>
+            <div style={{ ...styles.formHeader, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h2 style={styles.formTitle}>
+                  {mode === 'login' && 'Welcome back'}
+                  {mode === 'register' && 'Create account'}
+                  {mode === 'forgot' && 'Reset password'}
+                </h2>
+                <p style={styles.formSubtitle}>
+                  {mode === 'login' && 'Sign in to your distributor account'}
+                  {mode === 'register' && 'Set up your EasyTrack workspace'}
+                  {mode === 'forgot' && 'We will send a reset link to your email'}
+                </p>
+              </div>
+              <LanguageSwitcher />
             </div>
 
             {error && <div style={styles.errorBox}>⚠ {error}</div>}

@@ -9,6 +9,7 @@ import Card from '../components/ui/Card';
 import StatWidget from '../components/ui/StatWidget';
 import OfflineSyncWidget from '../components/ui/OfflineSyncWidget';
 import StickyKpiBar from '../components/ui/StickyKpiBar';
+import OwnerAiAssistantWidget from '../components/ui/OwnerAiAssistantWidget';
 import { useLanguage } from '../lib/i18n';
 
 // Custom tooltip for charts
@@ -4369,6 +4370,14 @@ function OwnerDashboard() {
           @page { margin: 1.6cm; size: A4; }
         }
       `}</style>
+
+        {/* Owner AI Q&A Assistant Widget */}
+        <OwnerAiAssistantWidget
+          financials={financials}
+          activeAgents={activeAgents}
+          productsCatalog={productsCatalog}
+          registeredShops={registeredShops}
+        />
       </div>
     </div>
   );
