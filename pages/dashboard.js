@@ -9,6 +9,7 @@ import Card from '../components/ui/Card';
 import StatWidget from '../components/ui/StatWidget';
 import OfflineSyncWidget from '../components/ui/OfflineSyncWidget';
 import StickyKpiBar from '../components/ui/StickyKpiBar';
+import { useLanguage } from '../lib/i18n';
 
 // Custom tooltip for charts
 const ChartTooltip = ({ active, payload, label }) => {
@@ -102,6 +103,7 @@ const InteractiveRouteMap = dynamic(() => import('../components/RouteMap'), {
 
 function OwnerDashboard() {
   const { supabase, profile, signOut } = useAuth();
+  const { t } = useLanguage();
   const isOwner = profile?.role === 'owner';
   const can = (perm) => isOwner || (profile?.permissions || []).includes(perm);
   const TAB_PERMISSION = { pending: 'today', history: 'dispatch', finance: 'finance', shops: 'shops', routes: 'routes', settings: 'settings' };
@@ -1648,12 +1650,12 @@ function OwnerDashboard() {
             <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px 6px', color: '#1e293b', flexShrink: 0, lineHeight: 1 }}>☰</button>
           )}
           <h1 style={{ margin: '0', fontSize: isMobile ? '20px' : '28px', fontWeight: 'bold', color: '#1e293b' }}>
-            {activeTab === 'pending' && 'Today'}
-            {activeTab === 'history' && 'Dispatch'}
-            {activeTab === 'finance' && 'Financial Insights'}
-            {activeTab === 'shops' && 'Shops'}
-            {activeTab === 'routes' && 'Routes'}
-            {activeTab === 'settings' && 'Settings'}
+            {activeTab === 'pending' && t('today_orders')}
+            {activeTab === 'history' && t('dispatch')}
+            {activeTab === 'finance' && t('finance')}
+            {activeTab === 'shops' && t('shops')}
+            {activeTab === 'routes' && t('routes')}
+            {activeTab === 'settings' && t('settings')}
           </h1>
         </header>
 

@@ -12,6 +12,7 @@ import { useLanguage } from '../lib/i18n';
 
 function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === 'undefined') return 'booking';
     return sessionStorage.getItem('et_agent_active_tab') || 'booking';
@@ -1185,11 +1186,11 @@ function AgentPortal() {
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderRadius: '8px', backgroundColor: '#f1f5f9', padding: '4px', marginBottom: '25px', gap: '2px' }}>
-          <button type="button" onClick={() => setActiveTab('booking')} style={tabStyle('booking')}>📝 Book Order</button>
-          <button type="button" onClick={() => setActiveTab('delivery')} style={tabStyle('delivery')}>📦 Deliver & Collect</button>
-          <button type="button" onClick={() => setActiveTab('returns')} style={tabStyle('returns')}>↩ Returns</button>
-          <button type="button" onClick={() => setActiveTab('expenses')} style={tabStyle('expenses')}>💰 Expenses</button>
-          <button type="button" onClick={() => setActiveTab('leave')} style={tabStyle('leave')}>🏖️ Leave</button>
+          <button type="button" onClick={() => setActiveTab('booking')} style={tabStyle('booking')}>{t('book_order_tab')}</button>
+          <button type="button" onClick={() => setActiveTab('delivery')} style={tabStyle('delivery')}>{t('deliver_tab')}</button>
+          <button type="button" onClick={() => setActiveTab('returns')} style={tabStyle('returns')}>{t('returns_tab')}</button>
+          <button type="button" onClick={() => setActiveTab('expenses')} style={tabStyle('expenses')}>{t('expenses_tab')}</button>
+          <button type="button" onClick={() => setActiveTab('leave')} style={tabStyle('leave')}>{t('leave_tab')}</button>
         </div>
 
         {/* ── PHASE 1: BOOK ORDER ── */}
@@ -2499,11 +2500,11 @@ function AgentPortal() {
       {/* Mobile bottom nav */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '2px solid #f1f5f9', display: 'flex', zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {[
-          { tab: 'booking',  icon: '📝', label: 'Book Order' },
-          { tab: 'delivery', icon: '📦', label: 'Deliver'    },
-          { tab: 'returns',  icon: '↩',  label: 'Returns'    },
-          { tab: 'expenses', icon: '💰', label: 'Expenses'   },
-          { tab: 'leave',    icon: '🏖️', label: 'Leave'      },
+          { tab: 'booking',  icon: '📝', label: t('book_order') },
+          { tab: 'delivery', icon: '📦', label: t('deliver')    },
+          { tab: 'returns',  icon: '↩',  label: t('returns')    },
+          { tab: 'expenses', icon: '💰', label: t('expenses')   },
+          { tab: 'leave',    icon: '🏖️', label: t('leave')      },
         ].map(({ tab, icon, label }) => (
           <button key={tab} type="button" onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: '10px 4px', border: 'none', background: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', cursor: 'pointer', color: activeTab === tab ? '#2563eb' : '#94a3b8', borderTop: `2px solid ${activeTab === tab ? '#2563eb' : 'transparent'}`, marginTop: '-2px' }}>
             <span style={{ fontSize: '20px', lineHeight: 1 }}>{icon}</span>
