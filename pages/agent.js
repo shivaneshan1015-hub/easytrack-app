@@ -7,6 +7,8 @@ import Logo from '../components/Logo';
 import OfflineSyncWidget from '../components/ui/OfflineSyncWidget';
 import SignaturePad from '../components/ui/SignaturePad';
 import TouchStepper from '../components/ui/TouchStepper';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import { useLanguage } from '../lib/i18n';
 
 function AgentPortal() {
   const { supabase, profile, signOut } = useAuth();
@@ -1170,6 +1172,9 @@ function AgentPortal() {
             <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#16a34a', display: 'inline-block' }}></span>
             <span style={{ fontSize: '13px', color: '#166534', fontWeight: '500' }}>{profile?.full_name || selectedEmployee || 'Field Agent'}</span>
             <button onClick={signOut} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '12px', cursor: 'pointer', padding: '0 0 0 6px', borderLeft: '1px solid #d1fae5' }}>Sign out</button>
+            <div style={{ marginLeft: 'auto' }}>
+              <LanguageSwitcher />
+            </div>
           </div>
           {outboxItems.length > 0 && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '8px', backgroundColor: '#fef9c3', border: '1px solid #fde68a', borderRadius: '20px', padding: '4px 14px' }}>
