@@ -45,21 +45,27 @@ export default function OwnerAiAssistantWidget({
       const qLower = userQ.toLowerCase();
       let answer = '';
 
-      if (qLower.includes('sales') || qLower.includes('revenue') || qLower.includes('விற்பனை') || qLower.includes('बिक्री')) {
+      if ((qLower.includes('how') || qLower.includes('where') || qLower.includes('add') || qLower.includes('change') || qLower.includes('எப்படி') || qLower.includes('சேர்ப்பது') || qLower.includes('कैसी')) && (qLower.includes('product') || qLower.includes('item') || qLower.includes('தயாரிப்பு') || qLower.includes('उत्पाद'))) {
+        answer = `📍 To Add or Change Product Details:\n\n1. Go to the 🏪 Shops tab in your left sidebar.\n2. Click the 💰 Pricing sub-tab (or go to ⚙️ Settings -> Product Catalog).\n3. Here you can add new items, set MRP prices, batch numbers, and stock levels!`;
+      } else if ((qLower.includes('how') || qLower.includes('where') || qLower.includes('add') || qLower.includes('எப்படி') || qLower.includes('சேர்ப்பது')) && (qLower.includes('shop') || qLower.includes('store') || qLower.includes('கடை') || qLower.includes('दुकान'))) {
+        answer = `📍 To Add a New Retail Store:\n\n1. Click 🏪 Shops in the left sidebar.\n2. Fill in the Shop Name, Phone, and Address in the 'Add New Shop' card.\n3. Click '+ Add Shop' to save!`;
+      } else if ((qLower.includes('how') || qLower.includes('where') || qLower.includes('route') || qLower.includes('beat') || qLower.includes('வழித்தடம்'))) {
+        answer = `📍 To Plan Beat Routes:\n\n1. Click 🗺️ Routes in your sidebar.\n2. Select an agent and tap 'Generate Optimized Route' for GPS-sequenced delivery paths!`;
+      } else if (qLower.includes('sales') || qLower.includes('revenue') || qLower.includes('விற்பனை') || qLower.includes('बिक्री')) {
         answer = `📊 Today's Total Sales Revenue is ₹${parseFloat(financials.totalSales || 0).toLocaleString('en-IN')}. Total Cash Collected so far is ₹${parseFloat(financials.totalCollected || 0).toLocaleString('en-IN')}.`;
       } else if (qLower.includes('credit') || qLower.includes('defaulter') || qLower.includes('pending') || qLower.includes('நிலுவை') || qLower.includes('बकाया')) {
         answer = `💳 Total Outstanding Credit across all shops is ₹${parseFloat(financials.totalOutstanding || 0).toLocaleString('en-IN')}. You can send automated WhatsApp payment reminders to defaulters from the Financial Insights tab!`;
       } else if (qLower.includes('agent') || qLower.includes('rep') || qLower.includes('முகவர்') || qLower.includes('एजेंट')) {
-        answer = `🟢 You have ${activeAgents.length} active sales agent(s) registered on your team. To invite a new field rep, go to Settings & Team -> Invite Agent.`;
+        answer = `🟢 You have ${activeAgents.length} active sales agent(s) registered on your team. To invite a new field rep, go to ⚙️ Settings & Team -> Invite Agent.`;
       } else if (qLower.includes('stock') || qLower.includes('product') || qLower.includes('தயாரிப்பு') || qLower.includes('उत्पाद')) {
         const lowStock = productsCatalog.filter(p => p.inventory_stock <= (p.low_stock_threshold || 10));
-        answer = `📦 Total items in Catalog: ${productsCatalog.length}. Low stock alerts: ${lowStock.length} item(s) running low.`;
+        answer = `📦 Total items in Catalog: ${productsCatalog.length}. Low stock alerts: ${lowStock.length} item(s) running low.\n\n📍 To add or update products, go to 🏪 Shops -> 💰 Pricing tab or Settings!`;
       } else if (qLower.includes('whatsapp') || qLower.includes('receipt') || qLower.includes('வாட்ஸ்அப்')) {
         answer = `📱 EasyTrack automatically generates dynamic WhatsApp payment receipt links. Delivery agents can tap 'Share WhatsApp Receipt' on their phone as soon as payment is collected!`;
       } else if (qLower.includes('invite') || qLower.includes('add user') || qLower.includes('சேர்')) {
-        answer = `👥 To onboard a new sales agent or dispatcher, navigate to Settings & Team in your sidebar and enter their email address.`;
+        answer = `👥 To onboard a new sales agent or dispatcher, navigate to ⚙️ Settings & Team in your sidebar and enter their email address.`;
       } else {
-        answer = `💡 I'm here to help! Current Business Snapshot:\n• Today Sales: ₹${parseFloat(financials.totalSales || 0).toLocaleString('en-IN')}\n• Cash Collected: ₹${parseFloat(financials.totalCollected || 0).toLocaleString('en-IN')}\n• Outstanding Credit: ₹${parseFloat(financials.totalOutstanding || 0).toLocaleString('en-IN')}\n• Registered Shops: ${registeredShops.length}`;
+        answer = `💡 EasyTrack AI Assistant:\n• Add Products: 🏪 Shops -> 💰 Pricing\n• Add Shops: 🏪 Shops -> Add New Shop\n• View Revenue: 📈 Financial Insights\n• Plan Beats: 🗺️ Routes`;
       }
 
       setMessages(prev => [...prev, { sender: 'ai', text: answer }]);

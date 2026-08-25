@@ -1622,17 +1622,17 @@ function OwnerDashboard() {
           );
         })()}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexGrow: 1 }}>
-          {can('today') && <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 Today</div>}
-          {can('dispatch') && <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 Dispatch</div>}
-          {can('finance') && <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 Financial Insights</div>}
-          {can('shops') && <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 Shops</div>}
-          {can('routes') && <div onClick={() => handleNavClick('routes')} style={tabStyle('routes')}>🗺️ Routes</div>}
+          {can('today') && <div onClick={() => handleNavClick('pending')} style={tabStyle('pending')}>🏠 {t('today')}</div>}
+          {can('dispatch') && <div onClick={() => handleNavClick('history')} style={tabStyle('history')}>📜 {t('dispatch')}</div>}
+          {can('finance') && <div onClick={() => handleNavClick('finance')} style={tabStyle('finance')}>📈 {t('finance')}</div>}
+          {can('shops') && <div onClick={() => handleNavClick('shops')} style={tabStyle('shops')}>🏪 {t('shops')}</div>}
+          {can('routes') && <div onClick={() => handleNavClick('routes')} style={tabStyle('routes')}>🗺️ {t('routes')}</div>}
         </nav>
-        {can('settings') && <div onClick={() => handleNavClick('settings')} style={{ ...tabStyle('settings'), marginTop: '8px' }}>⚙️ Settings</div>}
+        {can('settings') && <div onClick={() => handleNavClick('settings')} style={{ ...tabStyle('settings'), marginTop: '8px' }}>⚙️ {t('settings')}</div>}
         <div style={{ borderTop: '1px solid #1e293b', paddingTop: '20px', marginTop: '20px' }}>
           <p style={{ margin: '0 0 4px', fontSize: '13px', fontWeight: 'bold', color: '#f8fafc' }}>{profile?.full_name || 'Owner'}</p>
           <p style={{ margin: '0 0 14px', fontSize: '11px', color: '#64748b' }}>{profile?.email}</p>
-          <button onClick={signOut} style={{ width: '100%', padding: '10px', backgroundColor: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>Sign Out</button>
+          <button onClick={signOut} style={{ width: '100%', padding: '10px', backgroundColor: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>{t('sign_out')}</button>
         </div>
       </aside>
 
@@ -2473,9 +2473,9 @@ function OwnerDashboard() {
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     {[
-                      { key: 'list', label: 'List View' },
-                      { key: 'map', label: 'Map View' },
-                      ...(can('shops_pricing') ? [{ key: 'pricing', label: '💰 Pricing' }] : []),
+                      { key: 'list', label: t('list_view') },
+                      { key: 'map', label: t('map_view') },
+                      ...(can('shops_pricing') ? [{ key: 'pricing', label: t('pricing') }] : []),
                     ].map(v => (
                       <button key={v.key} onClick={() => setShopsViewMode(v.key)}
                         style={{
@@ -2490,27 +2490,27 @@ function OwnerDashboard() {
                   </div>
                   <button onClick={() => handleNavClick('routes')}
                     style={{ padding: '8px 20px', borderRadius: '999px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', border: 'none', backgroundColor: '#7c3aed', color: '#ffffff' }}>
-                    🗺️ Plan Routes
+                    🗺️ {t('routes')}
                   </button>
                 </div>
 
                 {shopsViewMode === 'list' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '30px' }}>
                     <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '30px' }}>
-                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>Add New Shop</h3>
+                      <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>{t('add_new_shop')}</h3>
                       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '15px', flexWrap: 'wrap', alignItems: isMobile ? 'stretch' : 'flex-end', marginTop: '20px' }}>
                         <div style={{ flex: isMobile ? '1' : 'none' }}>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Shop Name</label>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>{t('shop_name')}</label>
                           <input type="text" placeholder="e.g. Sri Murugan Stores" value={newShopName} onChange={(e) => setNewShopName(e.target.value)}
                             style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '250px', boxSizing: 'border-box' }} />
                         </div>
                         <div style={{ flex: isMobile ? '1' : 'none' }}>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Phone</label>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>{t('phone')}</label>
                           <input type="tel" placeholder="9876543210" value={newShopPhone} onChange={(e) => setNewShopPhone(e.target.value)}
                             style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '180px', boxSizing: 'border-box' }} />
                         </div>
                         <div style={{ flex: isMobile ? '1' : 'none' }}>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>Address</label>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>{t('address')}</label>
                           <input type="text" placeholder="Street, Area, City" value={newShopAddress} onChange={(e) => setNewShopAddress(e.target.value)}
                             style={{ padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', width: isMobile ? '100%' : '260px', boxSizing: 'border-box' }} />
                         </div>
@@ -2523,23 +2523,23 @@ function OwnerDashboard() {
                           else { addToast(`✅ "${newShopName}" added!`); setNewShopName(''); setNewShopPhone(''); setNewShopAddress(''); loadShops(); }
                         }} disabled={isAddingShop}
                           style={{ padding: '10px 24px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', height: '41px' }}>
-                          {isAddingShop ? 'Adding...' : '➕ Add Shop'}
+                          {isAddingShop ? t('submitting') : t('add_shop')}
                         </button>
                       </div>
                     </div>
                     <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
                       <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0' }}>
-                        <h3 style={{ margin: 0, fontSize: '16px' }}>All Shops ({shopsList.length})</h3>
+                        <h3 style={{ margin: 0, fontSize: '16px' }}>{t('all_shops')} ({shopsList.length})</h3>
                       </div>
                       <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
                         <thead><tr style={{ backgroundColor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Name</th>
-                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Phone</th>
-                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Address</th>
-                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>GPS</th>
-                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Credit Limit (₹)</th>
-                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px', minWidth: '160px' }}>Credit Usage</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{t('name')}</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{t('phone')}</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{t('address')}</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{t('gps')}</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>{t('credit_limit')}</th>
+                          <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px', minWidth: '160px' }}>{t('credit_usage')}</th>
                           <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Added</th>
                           <th style={{ padding: '14px 16px', color: '#475569', fontSize: '13px' }}>Actions</th>
                         </tr></thead>
